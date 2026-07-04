@@ -51,7 +51,7 @@ class TestSchema:
         with store._connection() as conn:
             row = conn.execute("SELECT version FROM schema_version").fetchone()
         assert row is not None
-        assert row["version"] == 5
+        assert row["version"] == 6
 
 
 # -- priors CRUD -------------------------------------------------------------

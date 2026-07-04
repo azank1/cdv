@@ -1,22 +1,40 @@
-# PromptLoop (Under Development)
+# PromptLoop
 
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=22&pause=1000&color=00CFFF&center=true&vCenter=true&width=700&lines=PromptLoop+%E2%80%94+Prompt+Quality+Loop;Conservative+Dual-Verify+Agent+Loops;Bayesian+Adaptive+Exit+%2B+Thompson+Sampling;MCP+Server+%E2%80%94+31+Tools+for+VS+Code+%2B+Cursor;Online+Weight+Learning+via+SGD;Zero+Training+%E2%80%94+Model+Agnostic)](https://github.com/azank1/loop-llm)
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=22&pause=1000&color=00CFFF&center=true&vCenter=true&width=700&lines=PromptLoop+%E2%80%94+Agent+Scrum-Master;Decompose%2C+Verify%2C+Audit%2C+Trust;Conservative+Dual-Verify+Agent+Loops;DAG+Virtual+Sub-Agents%2C+CDV-Gated;Local-First%2C+Model-Agnostic%2C+No+API+Key;Open+Source+%E2%80%94+MIT+Licensed)](https://github.com/azank1/loop-llm)
 
 [![CI](https://github.com/azank1/loop-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/azank1/loop-llm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://img.shields.io/badge/PyPI-loopllm-blue)](https://pypi.org/project/loopllm/)
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC?logo=visual-studio-code)](https://github.com/azank1/loop-llm/tree/main/vscode-loopllm)
 
-**A Bayesian MCP sidecar for your IDE agent** — observe prompts, refine outputs, and
-stop agent loops using externally verified scores.
+**A project manager for your AI coding assistant.** PromptLoop (package: `loopllm`)
+breaks a big request into checkable steps, independently verifies each one before
+the agent moves on, and keeps a local record your team can trust — no API key, no
+training, nothing leaves your machine.
 
-> Current release: **v0.7.0**. Next: **v0.8.0** episodic memory (branch `az/ft/episodic-memory`, not released).
+*Trust, but verify — your AI agent's work, checked step by step.*
+
+![PromptLoop DAG board: a goal decomposed into dependency-ordered nodes, each independently CDV-verified](.github/assets/dag-board.gif)
+
+*The agent scrum-master board — generated from real `loopllm_dag_*` tool calls
+(`scripts/generate_dag_board_gif.py`), the same data the VS Code Loop Monitor
+renders live. A goal becomes nodes; each node is scored independently before
+its dependents unlock; a failed node shows why in plain language.*
+
+> Current release: **v0.7.0**. Next: **v0.8.0** episodic memory (branch `az/ft/episodic-memory`, not released) and **v0.9.0** DAG virtual sub-agents (branch `az/ft/dag-virtual-agents-v2`, not released).
 
 ---
 
 ## Memory model
 
-PromptLoop uses two complementary memory layers in `~/.loopllm/store.db`:
+Every repo gets its own store: PromptLoop resolves a per-project id from your git
+remote (falling back to the repo root, then the working directory) and keys all
+local state under `~/.loopllm/projects/<id>/store.db` — two unrelated repos never
+share episodes, priors, or active runs. Override auto-detection with `LOOPLLM_PROJECT`
+(e.g. in CI, or a worktree that should share state with its main clone). Run
+`loopllm paths` to see the resolved directory for the current repo.
+
+PromptLoop uses two complementary memory layers in this per-project store:
 
 | Layer | What it learns | MCP tools |
 |---|---|---|
@@ -30,6 +48,21 @@ automatically: `loopllm_loop_start` returns `similar_episodes`, and
 deterministic keyword overlap today; the seam is stable for an FTS5/vector upgrade
 in v0.10.)
 
+**Verification audit trail.** Every recorded episode (agent-loop, DAG node, or
+DAG merge) is stamped with the git commit that was `HEAD` at the time. Run
+`loopllm audit --since <ref>` (e.g. `--since origin/main`) for a human-readable
+report of what the agent did and how it was CDV-verified on the current branch
+— the reviewable record a tech lead can point to. The VS Code Loop Monitor has
+an **Export audit** button that opens the same report as a markdown document.
+
+**Non-consultation signal.** MCP is advisory — nothing can force an IDE agent
+to call loopllm. So the VS Code Loop Monitor shows an undismissable banner,
+*"PromptLoop has not been consulted this session,"* whenever you've been
+editing but the agent hasn't called an entry-point tool
+(`loopllm_intercept`, `loop_start`, `loop_step`, `dag_compile`, `dag_submit`)
+since the panel opened. Silent non-adoption becomes visible instead of
+invisible.
+
 **Session continuity (recovery contract).** Every verified `loopllm_loop_step` is
 checkpointed to the `active_runs` table. If the MCP server or IDE restarts, the
 server rehydrates in-progress loops on startup; `loopllm_run_status` shows them and
@@ -37,15 +70,16 @@ server rehydrates in-progress loops on startup; `loopllm_run_status` shows them 
 `loopllm_loop_step` verdict also reports `cdv_mode` (`full` when an independent
 critic ran via MCP sampling, `channel_a_only` when only deterministic checks ran).
 
-For complex multi-step work, **DAG virtual sub-agents** are planned for v0.9 on
-branch `az/ft/dag-virtual-agents` — not released yet.
+For complex multi-step work, **DAG virtual sub-agents** decompose a goal into
+dependency-ordered nodes and CDV-verify each independently (v0.9, branch
+`az/ft/dag-virtual-agents-v2` — not released yet). See the board GIF above.
 
 ---
 
 ## What is PromptLoop?
 
 PromptLoop sits between you and Cursor, VS Code Copilot, or any MCP client. It does
-not replace your agent harness — it adds three capabilities on top:
+not replace your agent harness — it adds four capabilities on top:
 
 1. **Prompt observer** — score every prompt across 5 dimensions, route to elicitation
    or refinement, learn your preferences via online SGD.
@@ -54,8 +88,11 @@ not replace your agent harness — it adds three capabilities on top:
 3. **Conservative Dual-Verify agent loops** — agents submit step **artifacts**; the
    server scores them through two independent channels and learns when to stop
    (`loopllm_loop_start` / `loop_step` / `loop_end`).
+4. **DAG scrum-master** — decompose a complex goal into dependency-ordered nodes,
+   run each through CDV independently, and merge only once every node is verified
+   (`loopllm_dag_compile` / `dag_ready` / `dag_submit` / `dag_merge`).
 
-All three layers share one Bayesian learning core (`AdaptivePriors` + SQLite) — no
+All four layers share one Bayesian learning core (`AdaptivePriors` + SQLite) — no
 training data, no PyTorch.
 
 ---
@@ -64,20 +101,24 @@ training data, no PyTorch.
 
 ```mermaid
 flowchart TB
+  Agent["IDE agent (Cursor / Copilot / Claude Code)"]
   subgraph interfaces [Interfaces]
-    MCP[MCP 36 tools on v0.9 branch]
-    Ext[VS Code extension]
+    MCP[MCP sidecar]
+    Ext[VS Code board]
   end
-  subgraph layers [Three layers]
-    L1[Layer 1: Prompt observer intercept + SGD]
-    L2[Layer 2: Refinement loop LoopedLLM]
-    L3[Layer 3: CDV agent loops loop_start step end]
+  subgraph layers [Four layers]
+    L1["Layer 1: Prompt observer intercept + SGD"]
+    L2["Layer 2: Refinement loop LoopedLLM"]
+    L3["Layer 3: CDV agent loops loop_start step end"]
+    L4["Layer 4: DAG scrum-master compile ready submit merge"]
   end
-  subgraph learn [Learning]
-    Priors[AdaptivePriors + Episodes SQLite v5]
+  subgraph learn [Learning + audit]
+    Priors["AdaptivePriors + Episodes, per-project SQLite"]
+    Trail["Verification audit trail: commit-linked"]
   end
-  interfaces --> layers
-  layers --> Priors
+  Agent --> interfaces --> layers
+  layers --> Priors --> Trail
+  Ext -.->|"Export audit"| Trail
 ```
 
 | Layer | Entry point | What it does |
@@ -85,6 +126,7 @@ flowchart TB
 | 1 — Observer | `loopllm_intercept` | Score, route, log; Thompson Sampling for questions |
 | 2 — Refinement | `loopllm_run_pipeline` | Elicit → decompose → execute → verify via MCP sampling |
 | 3 — CDV loops | `loopllm_loop_step(step_output=...)` | External dual-verify scoring → guards → Bayesian stop |
+| 4 — DAG scrum-master | `loopllm_dag_compile` / `dag_ready` / `dag_submit` / `dag_merge` | Decompose a goal into dependency-ordered nodes; CDV-verify each independently |
 
 ---
 
@@ -115,9 +157,28 @@ loopllm score "add retry with backoff to download(); raise after 3 tries" --json
 
 Fully offline. Writes gauge state to `~/.loopllm/status.json` (VS Code extension picks it up).
 
-### Main use — MCP server in Cursor / VS Code
+### Main use — MCP server in Cursor / VS Code / Antigravity / Claude Code
 
-The server runs over stdio; your IDE's agent launches it. Point the IDE at `loopllm` on PATH — you don't run it by hand.
+The server runs over stdio; your IDE's agent launches it. One command registers it
+in whichever IDEs you have installed, merging into any existing MCP config instead
+of overwriting it:
+
+```bash
+loopllm install-mcp --ide all          # cursor + vscode + antigravity
+loopllm install-mcp --ide claude-code  # project-scoped .mcp.json (commit it — see below)
+```
+
+Then reload the IDE. In agent chat you'll have the `loopllm_*` tools — e.g. ask it to
+`loopllm_intercept` a prompt, run a Conservative Dual-Verify loop with `loopllm_loop_start`
+/ `loop_step` / `loop_end`, or decompose a complex goal with `loopllm_dag_compile`.
+
+If you installed in a venv (not pipx), pass `--provider agent` (the default) and edit
+the written config's `"command"` to the absolute venv path (e.g.
+`/home/you/.venvs/loopllm/bin/loopllm`) — the IDE won't see your venv's PATH.
+`--provider agent` uses your IDE's model via MCP sampling; no API key needed.
+
+<details>
+<summary>Prefer to edit the MCP config by hand?</summary>
 
 **Cursor** — `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
 
@@ -132,7 +193,8 @@ The server runs over stdio; your IDE's agent launches it. Point the IDE at `loop
 }
 ```
 
-**VS Code** (Copilot agent mode) — `.vscode/mcp.json`:
+**VS Code** (Copilot agent mode) / **Antigravity** — `.vscode/mcp.json` or the
+equivalent user-scoped `mcp.json`:
 
 ```json
 {
@@ -146,9 +208,21 @@ The server runs over stdio; your IDE's agent launches it. Point the IDE at `loop
 }
 ```
 
-Reload the IDE. In agent chat you'll have the `loopllm_*` tools — e.g. ask it to `loopllm_intercept` a prompt, or run a Conservative Dual-Verify loop with `loopllm_loop_start` / `loop_step` / `loop_end`.
+**Claude Code** — `.mcp.json` at the project root (project-scoped, meant to be
+committed so the whole team gets the same server):
 
-If you installed in a venv (not pipx), set `"command"` to the absolute venv path (e.g. `/home/you/.venvs/loopllm/bin/loopllm`) — the IDE won't see your venv's PATH. `--provider agent` uses your IDE's model via MCP sampling; no API key needed.
+```json
+{
+  "mcpServers": {
+    "loopllm": {
+      "command": "loopllm",
+      "args": ["mcp-server", "--provider", "agent"]
+    }
+  }
+}
+```
+
+</details>
 
 Verify on first load:
 
@@ -195,7 +269,7 @@ dashboard directly in the sidebar.
 
 **Prompt Lab** — live quality scratchpad
 
-![Prompt Lab](img/Screenshot_20260222_171552_Chrome.jpg)
+![Prompt Lab](.github/assets/prompt-lab.jpg)
 
 Scores on every keystroke (350 ms debounce). Grade badge, 5 dimension bars, issues + suggestions tags, Copy and Send to Chat.
 
@@ -204,7 +278,7 @@ Scores on every keystroke (350 ms debounce). Grade badge, 5 dimension bars, issu
 
 **History** — learning curve + metrics
 
-![History](img/Screenshot_20260222_171624_Chrome.jpg)
+![History](.github/assets/history.jpg)
 
 Learning curve sparkline, grade distribution, SGD learned weights per dimension. Updates after every `loopllm_feedback` call.
 
@@ -261,7 +335,7 @@ loopllm_loop_end(session_id)   → learns optimal depth from verified trajectori
 `loopllm_loop_step` returns `stop` when any guard fires: goal reached (verified score),
 plateau, low Bayesian ROI, budget exhausted, timeout, token cap, or repeated output.
 
-See [`examples/agent_loop.py`](examples/agent_loop.py) for the library demo and CDV via MCP.
+The same controller is available as a library API (CDV runs over MCP; here it's driven directly with pre-scored steps):
 
 ```python
 from loopllm import AdaptivePriors, AgentLoopController
@@ -296,12 +370,12 @@ while stop.should_continue(state):   # state = {"output": artifact, "tokens": n}
     state = run_agent_step(state)
 ```
 
-See [`examples/langgraph_stopper.py`](examples/langgraph_stopper.py) for a runnable
-graph-style demo (no LangGraph dependency required).
+`AdaptiveStopper` works as a drop-in `should_continue` predicate for a graph-style
+loop, with no LangGraph dependency required.
 
-![Adaptive agent loop demo](img/agent_loop.svg)
+![Adaptive agent loop demo](.github/assets/agent-loop.svg)
 
-What a terminal run looks like (`python examples/agent_loop.py`):
+What a terminal run looks like:
 
 ```text
 === Loop (task_type=bugfix) ===
@@ -312,8 +386,7 @@ Suggested budget: 3 step(s) | threshold 0.80 | confidence 0.00 (from 0 past loop
 
 ### Benchmark: adaptive vs fixed `max_iterations`
 
-Reproducible simulation (`benchmarks/adaptive_vs_fixed.py`, seed=7, 300 test tasks,
-threshold 0.80):
+Reproducible simulation (seed=7, 300 test tasks, threshold 0.80):
 
 | Strategy | Mean steps | Mean final score | % reaching 0.80 | Wasted steps | Efficiency (reach/step) |
 |---|---|---|---|---|---|
@@ -323,7 +396,7 @@ threshold 0.80):
 | **adaptive (loopllm)** | **3.56** | **0.852** | **99.7%** | **0.00** | **28.0** |
 
 **Adaptive uses ~41% fewer steps than a fixed 6-step budget** while reaching the bar
-on 99.7% of tasks. Repro: `python benchmarks/adaptive_vs_fixed.py`.
+on 99.7% of tasks.
 
 > Honest caveat: simulation with stated assumptions; measures *decision efficiency
 > given a quality signal*, not absolute model quality.

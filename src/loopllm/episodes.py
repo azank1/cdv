@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loopllm.project_scope import current_commit_sha
 from loopllm.store import LoopStore, _recall_terms
 
 _MAX_SUMMARY = 500
@@ -64,9 +65,26 @@ def artifact_ref_hash(content: str) -> str:
 class EpisodicStore:
     """Record and recall episodes backed by :class:`LoopStore`."""
 
-    def __init__(self, store: LoopStore, mirror_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        store: LoopStore,
+        mirror_path: Path | None = None,
+        mirror_dir: Path | None = None,
+    ) -> None:
+        """
+        Args:
+            store: backing SQLite store — the source of truth.
+            mirror_path: optional single JSON file overwritten with the most
+                recently upserted active run, for cheap "what's the latest
+                run" reads without a SQLite driver.
+            mirror_dir: optional directory mirroring *every* active run as
+                one ``<run_id>.json`` file each, so a UI can list all
+                concurrently active runs (multiple agent loops, DAG runs)
+                without querying SQLite directly.
+        """
         self._store = store
         self._mirror_path = mirror_path
+        self._mirror_dir = mirror_dir
 
     def record_episode(
         self,
@@ -81,12 +99,21 @@ class EpisodicStore:
         score_final: float | None = None,
         steps_used: int | None = None,
         stop_reason: str | None = None,
+        commit_sha: str | None = None,
     ) -> int:
-        """Persist one episode row."""
+        """Persist one episode row.
+
+        ``commit_sha`` defaults to the current git HEAD (resolved
+        automatically) so every verification outcome is traceable to the
+        commit that was checked out when it ran — this is what
+        ``loopllm audit --since <ref>`` reports against. Pass an explicit
+        value (or ``""``) to opt out.
+        """
         merged_tags = list(tags or [])
         for t in extract_tags(goal, task_type):
             if t not in merged_tags:
                 merged_tags.append(t)
+        resolved_commit = commit_sha if commit_sha is not None else current_commit_sha()
         return self._store.insert_episode(
             episode_type=episode_type,
             goal=goal,
@@ -98,6 +125,7 @@ class EpisodicStore:
             score_final=score_final,
             steps_used=steps_used,
             stop_reason=stop_reason,
+            commit_sha=resolved_commit or None,
         )
 
     def recall(
@@ -116,16 +144,21 @@ class EpisodicStore:
         run_type: str,
         state: dict[str, Any],
     ) -> None:
-        """Persist in-progress run; optionally mirror to JSON file."""
+        """Persist in-progress run; optionally mirror to JSON file(s)."""
         self._store.upsert_active_run(run_id, run_type, state)
+        payload = {
+            "run_id": run_id,
+            "run_type": run_type,
+            "state": state,
+        }
         if self._mirror_path is not None:
             self._mirror_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "run_id": run_id,
-                "run_type": run_type,
-                "state": state,
-            }
             self._mirror_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        if self._mirror_dir is not None:
+            self._mirror_dir.mkdir(parents=True, exist_ok=True)
+            (self._mirror_dir / f"{run_id}.json").write_text(
+                json.dumps(payload, indent=2), encoding="utf-8"
+            )
 
     def clear_active_run(self, run_id: str) -> None:
         """Remove active run after completion."""
@@ -137,6 +170,13 @@ class EpisodicStore:
                     self._mirror_path.unlink()
             except (json.JSONDecodeError, OSError):
                 pass
+        if self._mirror_dir is not None:
+            run_file = self._mirror_dir / f"{run_id}.json"
+            if run_file.exists():
+                try:
+                    run_file.unlink()
+                except OSError:
+                    pass
 
     def get_active_run(self, run_id: str) -> dict[str, Any] | None:
         return self._store.get_active_run(run_id)

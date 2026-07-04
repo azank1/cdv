@@ -31,6 +31,7 @@ from loopllm.step_scorer import (
     build_step_evaluator,
 )
 from loopllm.priors import CallObservation
+from loopllm.project_scope import resolve_db_path
 from loopllm.provider import LLMProvider
 from loopllm.dag_scheduler import DagScheduler
 from loopllm.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
@@ -61,18 +62,21 @@ _dag_scheduler: DagScheduler | None = None
 _status_path: Path | None = None
 _history_path: Path | None = None
 _episodes_feed_path: Path | None = None
+_consultation_path: Path | None = None
 # Last per-dimension scores computed by _score_prompt_quality — used by SGD.
 _last_prompt_dims: dict[str, float] = {}
 
 
 def _init_state() -> None:
     """Lazily initialise shared store, priors, and provider."""
-    global _store, _priors, _provider, _default_model, _status_path, _history_path  # noqa: PLW0603
+    global _store, _priors, _provider, _default_model  # noqa: PLW0603
+    global _status_path, _history_path, _episodes_feed_path  # noqa: PLW0603
+    global _consultation_path  # noqa: PLW0603
 
     if _store is not None:
         return
 
-    db_path = Path(os.environ.get("LOOPLLM_DB", str(Path.home() / ".loopllm" / "store.db")))
+    db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _store = LoopStore(db_path=db_path)
     _priors = SQLiteBackedPriors(_store)
@@ -80,6 +84,7 @@ def _init_state() -> None:
     _status_path = db_path.parent / "status.json"
     _history_path = db_path.parent / "prompt_history.json"
     _episodes_feed_path = db_path.parent / "episodes_feed.json"
+    _consultation_path = db_path.parent / "consultation.json"
 
     provider_name = os.environ.get("LOOPLLM_PROVIDER", "agent")
     _provider = _make_provider(provider_name)
@@ -220,9 +225,10 @@ def _get_agent_loop() -> AgentLoopController:
 def _get_episodic() -> EpisodicStore:
     global _episodic  # noqa: PLW0603
     if _episodic is None:
-        db_path = Path(os.environ.get("LOOPLLM_DB", str(Path.home() / ".loopllm" / "store.db")))
+        db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
         mirror = db_path.parent / "active_run.json"
-        _episodic = EpisodicStore(_get_store(), mirror_path=mirror)
+        mirror_dir = db_path.parent / "active_runs"
+        _episodic = EpisodicStore(_get_store(), mirror_path=mirror, mirror_dir=mirror_dir)
     return _episodic
 
 
@@ -487,8 +493,30 @@ def _estimate_complexity(prompt: str) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _mark_consulted(tool_name: str) -> None:
+    """Record that the IDE agent actually engaged loopllm's verification path.
+
+    Written on the handful of tools that represent real consultation
+    (intercept, loop_start/step, dag_compile/submit) — not passive reads like
+    run_status or recall. The VS Code extension compares this timestamp
+    against its own activation time to render an undismissable "PromptLoop
+    not consulted this session" signal when a session has edits but no
+    corresponding entry here. This is advisory only: MCP gives no way to
+    block a non-compliant agent, so visibility is the enforcement lever.
+    """
+    if _consultation_path is None:
+        return
+    try:
+        _consultation_path.parent.mkdir(parents=True, exist_ok=True)
+        _consultation_path.write_text(
+            json.dumps({"last_consulted_at": time.time(), "last_tool": tool_name}, indent=2)
+        )
+    except OSError:
+        pass  # Never crash on advisory-signal write failure
+
+
 def _write_status(tool_name: str, data: dict[str, Any]) -> None:
-    """Write current status to ~/.loopllm/status.json for the VS Code extension."""
+    """Write current status to <project state dir>/status.json for the VS Code extension."""
     if _status_path is None:
         return
     try:
@@ -503,7 +531,7 @@ def _write_status(tool_name: str, data: dict[str, Any]) -> None:
 
 
 def _append_history(record: dict[str, Any]) -> None:
-    """Append a prompt record to ~/.loopllm/prompt_history.json for the VS Code extension."""
+    """Append a prompt record to <project state dir>/prompt_history.json for the extension."""
     if _history_path is None:
         return
     try:
@@ -530,6 +558,7 @@ def _append_history(record: dict[str, Any]) -> None:
 
 def _tool_intercept(prompt: str) -> str:
     """Analyse a prompt and recommend the best approach before acting."""
+    _mark_consulted("intercept")
     store = _get_store()
     priors = _get_priors()
     model = _get_model()
@@ -1438,6 +1467,7 @@ def _tool_loop_start(
     max_tokens: int = 0,
 ) -> str:
     """Begin an adaptive agent-loop session with a CDV verifier recipe."""
+    _mark_consulted("loop_start")
     controller = _get_agent_loop()
     mod = model_id or _get_model()
     eval_kwargs: dict[str, Any] = {}
@@ -1513,6 +1543,7 @@ async def _tool_loop_step(
     ctx: Context[Any, Any, Any] | None = None,
 ) -> str:
     """Score a step artifact via CDV and return a continue/stop verdict."""
+    _mark_consulted("loop_step")
     controller = _get_agent_loop()
     try:
         session = controller.get_session(session_id)
@@ -1750,6 +1781,7 @@ def _tool_dag_compile(
     model_id: str | None = None,
 ) -> str:
     """Compile a DAG of virtual sub-agent nodes."""
+    _mark_consulted("dag_compile")
     scheduler = _get_dag_scheduler()
     mod = model_id or _get_model()
     episodic = _get_episodic()
@@ -1799,6 +1831,7 @@ async def _tool_dag_submit(
     ctx: Context[Any, Any, Any] | None = None,
 ) -> str:
     """Submit a node artifact with CDV when MCP sampling is available."""
+    _mark_consulted("dag_submit")
     scheduler = _get_dag_scheduler()
     try:
         result = await scheduler.submit_async(

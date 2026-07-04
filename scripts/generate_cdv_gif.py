@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from PIL import Image, ImageDraw, ImageFont
 
-from loopllm.mcp_server import _tool_loop_end, _tool_loop_start, _tool_loop_step
+from loopllm.mcp_server import _tool_loop_start, _tool_loop_step
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "img" / "agent_loop.gif"
