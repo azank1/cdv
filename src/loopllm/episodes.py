@@ -4,7 +4,7 @@ Recall ranking is deterministic weighted keyword overlap (see
 ``store.search_episodes``). The public ``EpisodicStore.recall`` /
 ``store.search_episodes`` signature is stable, so the ranking backend can be
 upgraded to SQLite FTS5 (a virtual table over goal+summary+tags, no new deps)
-or an embedding index later without touching callers — deferred to v0.10.
+or an embedding index later without touching callers — deferred to v0.11.
 """
 from __future__ import annotations
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -12,7 +13,12 @@ from loopllm.elicitation import ClarifyingQuestion, IntentRefiner
 from loopllm.engine import LoopConfig, LoopedLLM
 from loopllm.evaluators import LengthEvaluator
 from loopllm.priors import CallObservation
-from loopllm.project_scope import commits_since, resolve_db_path, resolve_project_id
+from loopllm.project_scope import (
+    commits_since,
+    legacy_store_path,
+    resolve_db_path,
+    resolve_project_id,
+)
 from loopllm.provider import LLMProvider
 from loopllm.store import LoopStore, SQLiteBackedPriors
 from loopllm.tasks import TaskOrchestrator
@@ -397,6 +403,7 @@ def cmd_paths(args: argparse.Namespace) -> None:
     """
     db_path = resolve_db_path(args.db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = legacy_store_path()
     payload = {
         "project_id": resolve_project_id(),
         "dir": str(db_path.parent),
@@ -407,6 +414,13 @@ def cmd_paths(args: argparse.Namespace) -> None:
         "active_run": str(db_path.parent / "active_run.json"),
         "active_runs_dir": str(db_path.parent / "active_runs"),
         "consultation": str(db_path.parent / "consultation.json"),
+        # Pre-v0.10 flat global store, if one exists and isn't already the
+        # resolved db — a hint that `loopllm migrate-legacy` applies here.
+        "legacy_store": (
+            str(legacy)
+            if legacy is not None and legacy.resolve() != db_path.resolve()
+            else None
+        ),
     }
     print(json.dumps(payload, indent=2))
 
@@ -464,6 +478,54 @@ def cmd_audit(args: argparse.Namespace) -> None:
             print(f"          {meta}")
 
     store.close()
+
+
+def cmd_migrate_legacy(args: argparse.Namespace) -> None:
+    """Copy the pre-v0.10 global store into this project's scoped store.
+
+    Before v0.10 every project shared one ``~/.loopllm/store.db``. State is
+    now scoped per project (``~/.loopllm/projects/<id>/store.db``), which
+    leaves an existing global store invisible — its learned priors and
+    episodes would be silently orphaned. This command imports it, once,
+    explicitly: run it from each project that should inherit the legacy
+    history. The legacy file is left in place.
+    """
+    source = Path(args.source) if args.source else (Path.home() / ".loopllm" / "store.db")
+    dest = resolve_db_path(args.db)
+
+    if not source.exists():
+        print(f"No legacy store found at {source} — nothing to migrate.")
+        return
+    if dest.exists() and source.samefile(dest):
+        print(f"{dest} already is the legacy store — nothing to migrate.")
+        return
+    if dest.exists() and not args.force:
+        print(
+            f"Refusing to overwrite existing project store {dest} (use --force).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # sqlite3 backup, not a file copy: carries WAL pages that a raw copy of
+    # just store.db would lose if the last writer wasn't checkpointed.
+    src_conn = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    try:
+        dst_conn = sqlite3.connect(dest)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
+    store = LoopStore(db_path=dest)  # opening runs any pending schema migrations
+    episode_count = len(store.list_episodes(limit=100_000))
+    store.close()
+    print(
+        f"Migrated {source} -> {dest} ({episode_count} episode(s)). "
+        "The legacy file was left in place."
+    )
 
 
 def cmd_install_mcp(args: argparse.Namespace) -> None:
@@ -629,6 +691,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("--limit", type=int, default=200, help="Max episodes to scan")
     p_audit.add_argument("--json", action="store_true", help="Output JSON instead of a report")
     p_audit.set_defaults(func=cmd_audit)
+
+    # --- migrate-legacy ---
+    p_migrate = subparsers.add_parser(
+        "migrate-legacy",
+        help="Import the pre-v0.10 global ~/.loopllm/store.db into this project's scoped store",
+    )
+    p_migrate.add_argument(
+        "--from", dest="source", default=None,
+        help="Legacy store path (default: ~/.loopllm/store.db)",
+    )
+    p_migrate.add_argument(
+        "--force", action="store_true",
+        help="Overwrite an existing project store",
+    )
+    p_migrate.set_defaults(func=cmd_migrate_legacy)
 
     # --- install-mcp ---
     p_install = subparsers.add_parser(

@@ -6,9 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.10.0] — unreleased (branch: az/ft/promptloop-product-v1)
+## [0.10.0] — 2026-07-04
 
 ### Added
+- New CLI command `loopllm migrate-legacy [--from <path>] [--force]` imports the
+  pre-v0.10 flat global `~/.loopllm/store.db` into the current project's scoped
+  store (WAL-safe `sqlite3` backup, then schema migration on open; the legacy
+  file is left in place). Without it, per-project scoping would silently orphan
+  an existing user's learned priors and episodes. `loopllm paths` now reports a
+  `legacy_store` field, and the MCP server logs a migration hint on startup when
+  a legacy store exists but the project store doesn't yet.
 - **Per-project state scoping**: [`project_scope.py`](src/loopllm/project_scope.py)
   resolves a stable project id from the git remote (falling back to the repo root,
   then the working directory) and keys all local state under
@@ -67,7 +74,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.github/copilot-instructions.md`) — README-embedded images moved to
   `.github/assets/` rather than a distinct top-level `img/` gallery.
 
-## [0.9.0] — unreleased (branch: az/ft/dag-virtual-agents-v2)
+## [0.9.0] — 2026-07-04
 
 ### Added
 - **DAG virtual sub-agents**: [`DagScheduler`](src/loopllm/dag_scheduler.py) compiles a
@@ -85,7 +92,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   merge, cycle detection, restore); `test_tool_dag_compile_ready_submit_status_merge`
   in `tests/test_mcp_episodic.py` (full MCP-tool-level DAG lifecycle).
 
-## [0.8.0] — unreleased (branch: az/ft/episodic-memory)
+## [0.8.0] — 2026-06-23
 
 ### Added
 - **Episodic memory** (SQLite schema v5): `episodes` and `active_runs` tables.

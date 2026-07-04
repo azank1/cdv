@@ -21,7 +21,7 @@ training, nothing leaves your machine.
 renders live. A goal becomes nodes; each node is scored independently before
 its dependents unlock; a failed node shows why in plain language.*
 
-> Current release: **v0.7.0**. Next: **v0.8.0** episodic memory (branch `az/ft/episodic-memory`, not released) and **v0.9.0** DAG virtual sub-agents (branch `az/ft/dag-virtual-agents-v2`, not released).
+> Current release: **v0.10.0** — episodic memory (v0.8), DAG virtual sub-agents (v0.9), and per-project scoping + verification audit trail (v0.10). See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -33,6 +33,10 @@ local state under `~/.loopllm/projects/<id>/store.db` — two unrelated repos ne
 share episodes, priors, or active runs. Override auto-detection with `LOOPLLM_PROJECT`
 (e.g. in CI, or a worktree that should share state with its main clone). Run
 `loopllm paths` to see the resolved directory for the current repo.
+
+Upgrading from v0.9 or earlier? Your old global `~/.loopllm/store.db` isn't
+lost — run `loopllm migrate-legacy` in each project that should inherit its
+learned priors and episodes (or set `LOOPLLM_DB` to keep using it directly).
 
 PromptLoop uses two complementary memory layers in this per-project store:
 
@@ -46,7 +50,7 @@ loop of the same task type can recall *what worked before*. Recall is also injec
 automatically: `loopllm_loop_start` returns `similar_episodes`, and
 `loopllm_intercept` flags `recall_available` on clear prompts. (Ranking is
 deterministic keyword overlap today; the seam is stable for an FTS5/vector upgrade
-in v0.10.)
+in v0.11.)
 
 **Verification audit trail.** Every recorded episode (agent-loop, DAG node, or
 DAG merge) is stamped with the git commit that was `HEAD` at the time. Run
@@ -71,8 +75,8 @@ server rehydrates in-progress loops on startup; `loopllm_run_status` shows them 
 critic ran via MCP sampling, `channel_a_only` when only deterministic checks ran).
 
 For complex multi-step work, **DAG virtual sub-agents** decompose a goal into
-dependency-ordered nodes and CDV-verify each independently (v0.9, branch
-`az/ft/dag-virtual-agents-v2` — not released yet). See the board GIF above.
+dependency-ordered nodes and CDV-verify each independently (v0.9+). See the
+board GIF above.
 
 ---
 

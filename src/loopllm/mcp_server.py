@@ -31,7 +31,7 @@ from loopllm.step_scorer import (
     build_step_evaluator,
 )
 from loopllm.priors import CallObservation
-from loopllm.project_scope import resolve_db_path
+from loopllm.project_scope import legacy_store_path, resolve_db_path
 from loopllm.provider import LLMProvider
 from loopllm.dag_scheduler import DagScheduler
 from loopllm.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
@@ -78,6 +78,19 @@ def _init_state() -> None:
 
     db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not db_path.exists():
+        # Fresh project store, but a pre-v0.10 flat global store exists: point
+        # the user at it instead of silently orphaning their learned history.
+        legacy = legacy_store_path()
+        if legacy is not None:
+            logger.info(
+                "legacy_global_store_found",
+                legacy=str(legacy),
+                hint=(
+                    "run `loopllm migrate-legacy` to import it into this "
+                    "project, or set LOOPLLM_DB to keep using it directly"
+                ),
+            )
     _store = LoopStore(db_path=db_path)
     _priors = SQLiteBackedPriors(_store)
     _default_model = os.environ.get("LOOPLLM_MODEL", "gpt-4o-mini")

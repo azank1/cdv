@@ -118,6 +118,19 @@ def commits_since(ref: str, cwd: Path | None = None) -> set[str] | None:
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
+def legacy_store_path(base: Path | None = None) -> Path | None:
+    """Return the pre-v0.10 flat global store (``<base>/store.db``) if present.
+
+    v0.10 moved state under ``<base>/projects/<id>/``; a store left behind by
+    v0.8/v0.9 is otherwise invisible to the scoped layout, so callers use this
+    to surface a ``loopllm migrate-legacy`` hint instead of silently orphaning
+    the user's learned priors and episodes.
+    """
+    base = base or (Path.home() / ".loopllm")
+    legacy = base / "store.db"
+    return legacy if legacy.exists() else None
+
+
 def resolve_db_path(
     explicit: str | os.PathLike[str] | None,
     *,
