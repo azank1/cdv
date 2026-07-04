@@ -65,7 +65,7 @@ training data, no PyTorch.
 ```mermaid
 flowchart TB
   subgraph interfaces [Interfaces]
-    MCP[MCP 31 tools on v0.8 branch]
+    MCP[MCP 36 tools on v0.9 branch]
     Ext[VS Code extension]
   end
   subgraph layers [Three layers]
@@ -481,14 +481,15 @@ print(result.output, result.best_score, result.converged)
 See **Develop from source** above for clone and setup. Then:
 
 ```bash
-python -m pytest tests/ -q          # ~220 tests, ~2s
+python -m pytest tests/ -q          # ~248 tests, ~2s
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming (`az/<type>/<short>`) and checks.
 
 **Key files:**
-- `src/loopllm/mcp_server.py` — 31 MCP tools + MCP Sampling helpers
+- `src/loopllm/mcp_server.py` — 36 MCP tools + MCP Sampling helpers
 - `src/loopllm/episodes.py` — episodic memory record/recall
+- `src/loopllm/dag_scheduler.py` — DAG virtual sub-agents (compile/ready/submit/merge)
 - `src/loopllm/step_scorer.py` — Conservative Dual-Verify scoring
 - `src/loopllm/guards.py` — composable agent-loop stop stack
 - `src/loopllm/agent_loop.py` — adaptive agent-loop controller

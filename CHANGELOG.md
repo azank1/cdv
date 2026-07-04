@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] — unreleased (branch: az/ft/dag-virtual-agents-v2)
+
+### Added
+- **DAG virtual sub-agents**: [`DagScheduler`](src/loopllm/dag_scheduler.py) compiles a
+  goal + node spec (id, role, description, dependencies) into a dependency-ordered
+  graph, hands the IDE agent one frontier node at a time, and scores each submission
+  through the existing Conservative Dual-Verify path — no new verification model.
+- New tools: `loopllm_dag_compile`, `loopllm_dag_ready`, `loopllm_dag_submit`,
+  `loopllm_dag_status`, `loopllm_dag_merge` (**36 tools total**).
+- `loopllm_intercept`'s `route: decompose` now points at `loopllm_dag_compile`
+  instead of the plain synchronous `loopllm_plan_tasks` pipeline.
+- Verified DAG nodes are recorded as `plan_node` episodes; a merged run is recorded
+  as a `dag` episode and its active-run snapshot is cleared — DAG runs recover
+  through the same `loopllm_run_status` snapshot as agent loops.
+- Tests: `tests/test_dag_scheduler.py` (scheduler unit tests: compile/ready/submit/
+  merge, cycle detection, restore); `test_tool_dag_compile_ready_submit_status_merge`
+  in `tests/test_mcp_episodic.py` (full MCP-tool-level DAG lifecycle).
+
 ## [0.8.0] — unreleased (branch: az/ft/episodic-memory)
 
 ### Added
