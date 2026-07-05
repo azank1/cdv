@@ -155,3 +155,28 @@ def test_commits_since_none_for_bad_ref(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path, "repo")
     _commit(repo, "only commit")
     assert commits_since("not-a-real-ref", repo) is None
+
+
+def test_commits_since_no_merges_excludes_merge_commits(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    base_sha = _commit(repo, "base")
+
+    _git(["checkout", "-b", "feature"], repo)
+    feature_sha = _commit(repo, "feature work")
+
+    _git(["checkout", "main"], repo)
+    _git(
+        ["-c", "user.email=t@example.com", "-c", "user.name=Test", "merge", "--no-ff", "feature", "-m", "merge feature"],
+        repo,
+    )
+    merge_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    with_merges = commits_since(base_sha, repo)
+    assert with_merges == {feature_sha, merge_sha}
+
+    without_merges = commits_since(base_sha, repo, no_merges=True)
+    assert without_merges == {feature_sha}

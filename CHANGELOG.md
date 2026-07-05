@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **CI verification gate**: `loopllm audit --export <path>` writes the audit
+  trail as a portable JSON artifact (default `.loopllm/audit.json`) so it can
+  be committed alongside the code it verifies — a CI runner has no local
+  `~/.loopllm/` state to read otherwise. New CLI command
+  `loopllm audit-gate --since <ref> [--min-score X] [--require-verified]`
+  reads that artifact and checks every non-merge commit in the range against
+  it; without `--min-score`/`--require-verified` it only reports (exit 0), so
+  a team can dogfood the report before turning on enforcement.
+- Reusable composite action [`.github/actions/loopllm-gate`](.github/actions/loopllm-gate/action.yml)
+  and workflow [`.github/workflows/loopllm-gate.yml`](.github/workflows/loopllm-gate.yml)
+  wire the gate into this repo's own PRs in report-only mode.
+- `commits_since()` in [`project_scope.py`](src/loopllm/project_scope.py) gained
+  a `no_merges` option — a merge commit isn't itself something an agent wrote
+  and verified, so the gate scopes to the individual commits merged in.
+- Tests: `tests/test_cli_audit_gate.py` (export round-trip, report-only vs.
+  enforced modes, `--min-score`, merge-commit exclusion, bad ref handling).
+
 ## [0.10.0] — 2026-07-04
 
 ### Added
