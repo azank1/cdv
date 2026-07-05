@@ -493,7 +493,7 @@ PyPI: [`loopllm`](https://pypi.org/project/loopllm/) · extras: `[mcp]` (IDE ser
 
 ---
 
-## Tools (32)
+## Tools (36)
 
 | Tool | What it does |
 |---|---|
@@ -519,14 +519,20 @@ PyPI: [`loopllm`](https://pypi.org/project/loopllm/) · extras: `[mcp]` (IDE ser
 | `loopllm_loop_end` | Close loop and learn optimal depth from verified trajectories |
 | `loopllm_loop_status` | Inspect an active agent-loop session |
 | `loopllm_recall` | Keyword recall of similar past episodes |
-| `loopllm_run_status` | Active loop/plan snapshots for crash recovery |
+| `loopllm_run_status` | Active loop/plan/DAG run snapshots for crash recovery |
+| `loopllm_loop_resume` | Resume an in-progress agent loop after an IDE reload or MCP restart |
+| `loopllm_dag_compile` | **Scrum-master board.** Compile a goal into a dependency-ordered DAG of virtual sub-agent nodes |
+| `loopllm_dag_ready` | Return frontier DAG nodes whose dependencies are verified |
+| `loopllm_dag_submit` | Submit a DAG node step artifact for CDV scoring |
+| `loopllm_dag_status` | Full DAG graph state: node states, scores, ready frontier |
+| `loopllm_dag_merge` | Merge verified DAG node outputs in topological order |
 | `loopllm_classify_task` | Label a prompt's task type |
 | `loopllm_analyze_prompt` | Generate clarifying questions ranked by Thompson-sampled gain |
 | `loopllm_list_tasks` | List tasks from the persistent store |
 | `loopllm_show_task` | Detail view for a single task |
 | `loopllm_report` | Learned weights, Bayesian priors, question effectiveness stats |
 
-Plans, episodes, and learned weights persist to `~/.loopllm/store.db` (schema v5).
+Plans, episodes, and learned weights persist to a per-project `~/.loopllm/projects/<id>/store.db` (schema v6).
 
 ---
 
@@ -572,7 +578,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming (`az/<type>/<short>`) a
 - `src/loopllm/agent_loop.py` — adaptive agent-loop controller
 - `src/loopllm/evaluator_factory.py` — build evaluators for CDV Channel A
 - `src/loopllm/priors.py` — Beta/Normal priors, Welford, Thompson Sampling
-- `src/loopllm/store.py` — SQLite persistence (schema v5)
+- `src/loopllm/store.py` — SQLite persistence (schema v6)
 - `src/loopllm/engine.py` — core refinement loop (`LoopedLLM`)
 
 PRs welcome. Add tests for new tools in `tests/`.
