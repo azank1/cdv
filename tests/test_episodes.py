@@ -7,8 +7,14 @@ from loopllm.episodes import EpisodicStore, extract_tags, summarize_artifacts, t
 from loopllm.store import LoopStore, SCHEMA_VERSION
 
 
-def test_migration_v4_to_v5(tmp_path) -> None:
-    """A pre-existing v4 database gains the v5 episodic tables on open."""
+def _git(args: list[str], cwd) -> None:
+    import subprocess
+
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def test_migration_v4_to_v6(tmp_path) -> None:
+    """A pre-existing v4 database gains the v5 episodic tables and v6 commit_sha column."""
     db = tmp_path / "old.db"
     conn = sqlite3.connect(db)
     conn.executescript(
@@ -24,8 +30,10 @@ def test_migration_v4_to_v5(tmp_path) -> None:
         tables = {
             r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-    assert version == SCHEMA_VERSION == 5
+        episode_cols = {r[1] for r in c.execute("PRAGMA table_info(episodes)")}
+    assert version == SCHEMA_VERSION == 6
     assert {"episodes", "active_runs"} <= tables
+    assert "commit_sha" in episode_cols
 
 
 def test_recall_ranks_relevant_first_with_tag_boost(store: LoopStore) -> None:
@@ -102,6 +110,59 @@ def test_active_run_lifecycle(store: LoopStore, tmp_path) -> None:
     assert mirror.exists()
     episodic.clear_active_run("sess1")
     assert episodic.get_active_run("sess1") is None
+
+
+def test_active_run_mirror_dir_supports_concurrent_runs(store: LoopStore, tmp_path) -> None:
+    """mirror_dir writes one file per run_id, unlike the single-file mirror_path."""
+    mirror_dir = tmp_path / "active_runs"
+    episodic = EpisodicStore(store, mirror_dir=mirror_dir)
+
+    episodic.upsert_active_run("sess1", "agent_loop", {"goal": "fix auth"})
+    episodic.upsert_active_run("sess2", "dag", {"goal": "refactor module"})
+
+    assert (mirror_dir / "sess1.json").exists()
+    assert (mirror_dir / "sess2.json").exists()
+
+    import json
+
+    sess2_payload = json.loads((mirror_dir / "sess2.json").read_text())
+    assert sess2_payload["run_type"] == "dag"
+    assert sess2_payload["state"]["goal"] == "refactor module"
+
+    episodic.clear_active_run("sess1")
+    assert not (mirror_dir / "sess1.json").exists()
+    assert (mirror_dir / "sess2.json").exists()
+
+
+def test_record_episode_auto_captures_commit_sha(store: LoopStore, tmp_path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(["init"], repo)
+    (repo / "f.txt").write_text("hi")
+    _git(["add", "."], repo)
+    _git(["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "c1"], repo)
+
+    monkeypatch.chdir(repo)
+    episodic = EpisodicStore(store)
+    ep_id = episodic.record_episode(
+        episode_type="agent_loop", goal="fix bug", task_type="bugfix",
+        model_id="m", summary="fixed", score_final=0.9,
+    )
+    episodes = store.list_episodes()
+    recorded = next(e for e in episodes if e["id"] == ep_id)
+    assert recorded["commit_sha"] is not None
+    assert len(recorded["commit_sha"]) == 40
+
+
+def test_record_episode_explicit_commit_sha_overrides_auto(store: LoopStore) -> None:
+    episodic = EpisodicStore(store)
+    ep_id = episodic.record_episode(
+        episode_type="agent_loop", goal="fix bug", task_type="bugfix",
+        model_id="m", summary="fixed", score_final=0.9, commit_sha="deadbeef",
+    )
+    episodes = store.list_episodes()
+    recorded = next(e for e in episodes if e["id"] == ep_id)
+    assert recorded["commit_sha"] == "deadbeef"
 
 
 def test_summarize_artifacts() -> None:

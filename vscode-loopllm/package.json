@@ -1,10 +1,19 @@
 {
   "name": "loopllm-prompt-gauge",
-  "displayName": "Loop LLM — Prompt Quality Gauge",
-  "description": "Real-time prompt quality scoring, learning curve tracking, and improvement suggestions powered by loop-llm",
-  "version": "0.2.0",
+  "displayName": "PromptLoop — Agent Verification Board",
+  "description": "DAG dependency board, Conservative Dual-Verify loop monitor, and real-time prompt quality scoring for AI coding agents, powered by loopllm",
+  "version": "0.3.0",
   "publisher": "loopllm",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/azank1/loop-llm",
+    "directory": "vscode-loopllm"
+  },
+  "homepage": "https://github.com/azank1/loop-llm",
+  "bugs": {
+    "url": "https://github.com/azank1/loop-llm/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -28,7 +37,7 @@
       "activitybar": [
         {
           "id": "loopllm",
-          "title": "Loop LLM",
+          "title": "PromptLoop",
           "icon": "media/icon.svg"
         }
       ]
@@ -55,15 +64,15 @@
     "commands": [
       {
         "command": "loopllm.refreshStats",
-        "title": "Loop LLM: Refresh Prompt Stats"
+        "title": "PromptLoop: Refresh Prompt Stats"
       },
       {
         "command": "loopllm.showDashboard",
-        "title": "Loop LLM: Show Dashboard"
+        "title": "PromptLoop: Show Dashboard"
       },
       {
         "command": "loopllm.scoreSelection",
-        "title": "Loop LLM: Score Selected Text"
+        "title": "PromptLoop: Score Selected Text"
       }
     ],
     "keybindings": [
@@ -75,12 +84,12 @@
       }
     ],
     "configuration": {
-      "title": "Loop LLM",
+      "title": "PromptLoop",
       "properties": {
         "loopllm.dbPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the loop-llm SQLite database. Defaults to ~/.loopllm/store.db"
+          "description": "Path to the loopllm SQLite database. Leave empty to auto-resolve the per-project store via `loopllm paths` (recommended)."
         },
         "loopllm.pollIntervalMs": {
           "type": "number",
@@ -90,7 +99,7 @@
         "loopllm.statusFilePath": {
           "type": "string",
           "default": "",
-          "description": "Path to status.json file. Defaults to ~/.loopllm/status.json"
+          "description": "Path to status.json. Leave empty to auto-resolve alongside the per-project database."
         }
       }
     }

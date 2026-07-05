@@ -31,7 +31,9 @@ from loopllm.step_scorer import (
     build_step_evaluator,
 )
 from loopllm.priors import CallObservation
+from loopllm.project_scope import legacy_store_path, resolve_db_path
 from loopllm.provider import LLMProvider
+from loopllm.dag_scheduler import DagScheduler
 from loopllm.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
 from loopllm.plan_registry import get_registry
 from loopllm.providers.agent import AgentPassthroughProvider
@@ -56,28 +58,46 @@ _default_model: str = "gpt-4o-mini"
 _active_sessions: dict[str, dict[str, Any]] = {}
 _agent_loop: AgentLoopController | None = None
 _episodic: EpisodicStore | None = None
+_dag_scheduler: DagScheduler | None = None
 _status_path: Path | None = None
 _history_path: Path | None = None
 _episodes_feed_path: Path | None = None
+_consultation_path: Path | None = None
 # Last per-dimension scores computed by _score_prompt_quality — used by SGD.
 _last_prompt_dims: dict[str, float] = {}
 
 
 def _init_state() -> None:
     """Lazily initialise shared store, priors, and provider."""
-    global _store, _priors, _provider, _default_model, _status_path, _history_path  # noqa: PLW0603
+    global _store, _priors, _provider, _default_model  # noqa: PLW0603
+    global _status_path, _history_path, _episodes_feed_path  # noqa: PLW0603
+    global _consultation_path  # noqa: PLW0603
 
     if _store is not None:
         return
 
-    db_path = Path(os.environ.get("LOOPLLM_DB", str(Path.home() / ".loopllm" / "store.db")))
+    db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not db_path.exists():
+        # Fresh project store, but a pre-v0.10 flat global store exists: point
+        # the user at it instead of silently orphaning their learned history.
+        legacy = legacy_store_path()
+        if legacy is not None:
+            logger.info(
+                "legacy_global_store_found",
+                legacy=str(legacy),
+                hint=(
+                    "run `loopllm migrate-legacy` to import it into this "
+                    "project, or set LOOPLLM_DB to keep using it directly"
+                ),
+            )
     _store = LoopStore(db_path=db_path)
     _priors = SQLiteBackedPriors(_store)
     _default_model = os.environ.get("LOOPLLM_MODEL", "gpt-4o-mini")
     _status_path = db_path.parent / "status.json"
     _history_path = db_path.parent / "prompt_history.json"
     _episodes_feed_path = db_path.parent / "episodes_feed.json"
+    _consultation_path = db_path.parent / "consultation.json"
 
     provider_name = os.environ.get("LOOPLLM_PROVIDER", "agent")
     _provider = _make_provider(provider_name)
@@ -218,10 +238,18 @@ def _get_agent_loop() -> AgentLoopController:
 def _get_episodic() -> EpisodicStore:
     global _episodic  # noqa: PLW0603
     if _episodic is None:
-        db_path = Path(os.environ.get("LOOPLLM_DB", str(Path.home() / ".loopllm" / "store.db")))
+        db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
         mirror = db_path.parent / "active_run.json"
-        _episodic = EpisodicStore(_get_store(), mirror_path=mirror)
+        mirror_dir = db_path.parent / "active_runs"
+        _episodic = EpisodicStore(_get_store(), mirror_path=mirror, mirror_dir=mirror_dir)
     return _episodic
+
+
+def _get_dag_scheduler() -> DagScheduler:
+    global _dag_scheduler  # noqa: PLW0603
+    if _dag_scheduler is None:
+        _dag_scheduler = DagScheduler(_get_episodic())
+    return _dag_scheduler
 
 
 def _build_evaluator(
@@ -478,8 +506,30 @@ def _estimate_complexity(prompt: str) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _mark_consulted(tool_name: str) -> None:
+    """Record that the IDE agent actually engaged loopllm's verification path.
+
+    Written on the handful of tools that represent real consultation
+    (intercept, loop_start/step, dag_compile/submit) — not passive reads like
+    run_status or recall. The VS Code extension compares this timestamp
+    against its own activation time to render an undismissable "PromptLoop
+    not consulted this session" signal when a session has edits but no
+    corresponding entry here. This is advisory only: MCP gives no way to
+    block a non-compliant agent, so visibility is the enforcement lever.
+    """
+    if _consultation_path is None:
+        return
+    try:
+        _consultation_path.parent.mkdir(parents=True, exist_ok=True)
+        _consultation_path.write_text(
+            json.dumps({"last_consulted_at": time.time(), "last_tool": tool_name}, indent=2)
+        )
+    except OSError:
+        pass  # Never crash on advisory-signal write failure
+
+
 def _write_status(tool_name: str, data: dict[str, Any]) -> None:
-    """Write current status to ~/.loopllm/status.json for the VS Code extension."""
+    """Write current status to <project state dir>/status.json for the VS Code extension."""
     if _status_path is None:
         return
     try:
@@ -494,7 +544,7 @@ def _write_status(tool_name: str, data: dict[str, Any]) -> None:
 
 
 def _append_history(record: dict[str, Any]) -> None:
-    """Append a prompt record to ~/.loopllm/prompt_history.json for the VS Code extension."""
+    """Append a prompt record to <project state dir>/prompt_history.json for the extension."""
     if _history_path is None:
         return
     try:
@@ -521,6 +571,7 @@ def _append_history(record: dict[str, Any]) -> None:
 
 def _tool_intercept(prompt: str) -> str:
     """Analyse a prompt and recommend the best approach before acting."""
+    _mark_consulted("intercept")
     store = _get_store()
     priors = _get_priors()
     model = _get_model()
@@ -538,9 +589,11 @@ def _tool_intercept(prompt: str) -> str:
         next_tool = "loopllm_elicitation_start"
     elif complexity > 0.6:
         route = "decompose"
-        reason = (f"Complex task (complexity={complexity:.2f}) — "
-                  "breaking into subtasks will produce better results")
-        next_tool = "loopllm_plan_tasks"
+        reason = (
+            f"Complex task (complexity={complexity:.2f}) — use DAG virtual "
+            f"sub-agents (loopllm_dag_compile) with verified node boundaries"
+        )
+        next_tool = "loopllm_dag_compile"
     elif q < 0.6:
         route = "elicit_then_refine"
         reason = ("Prompt has gaps — quick elicitation then refinement "
@@ -1427,6 +1480,7 @@ def _tool_loop_start(
     max_tokens: int = 0,
 ) -> str:
     """Begin an adaptive agent-loop session with a CDV verifier recipe."""
+    _mark_consulted("loop_start")
     controller = _get_agent_loop()
     mod = model_id or _get_model()
     eval_kwargs: dict[str, Any] = {}
@@ -1502,6 +1556,7 @@ async def _tool_loop_step(
     ctx: Context[Any, Any, Any] | None = None,
 ) -> str:
     """Score a step artifact via CDV and return a continue/stop verdict."""
+    _mark_consulted("loop_step")
     controller = _get_agent_loop()
     try:
         session = controller.get_session(session_id)
@@ -1648,7 +1703,7 @@ def _tool_recall(
 
 
 def _tool_run_status() -> str:
-    """Return active loop/plan snapshots for IDE reload recovery."""
+    """Return active loop/plan/DAG snapshots for IDE reload recovery."""
     snapshot = _get_episodic().run_status_snapshot()
     controller = _get_agent_loop()
     loops: list[dict[str, Any]] = []
@@ -1730,6 +1785,94 @@ def _tool_loop_resume(session_id: str | None = None) -> str:
         indent=2,
         default=str,
     )
+
+
+def _tool_dag_compile(
+    goal: str,
+    nodes: list[dict[str, Any]] | None = None,
+    task_type: str = "general",
+    model_id: str | None = None,
+) -> str:
+    """Compile a DAG of virtual sub-agent nodes."""
+    _mark_consulted("dag_compile")
+    scheduler = _get_dag_scheduler()
+    mod = model_id or _get_model()
+    episodic = _get_episodic()
+    recall = episodic.recall(goal, task_type=task_type, k=3)
+
+    if not nodes:
+        return json.dumps({
+            "error": "Provide nodes array with id, role, description, dependencies.",
+            "hint": (
+                "Each node: {id, role, description, dependencies, "
+                "evaluator_type?, required_patterns?}"
+            ),
+            "similar_episodes": recall,
+        }, indent=2)
+
+    run = scheduler.compile(
+        goal,
+        nodes,
+        task_type=task_type,
+        model_id=mod,
+        recall_query=goal,
+    )
+    payload = scheduler.to_dict(run.run_id)
+    payload["similar_episodes"] = recall
+    payload["guidance"] = (
+        "Call loopllm_dag_ready, execute one frontier node, then "
+        "loopllm_dag_submit with step_output. Repeat until dag_complete, "
+        "then loopllm_dag_merge."
+    )
+    return json.dumps(payload, indent=2, default=str)
+
+
+def _tool_dag_ready(run_id: str) -> str:
+    """Return frontier DAG nodes ready for the IDE agent to execute."""
+    scheduler = _get_dag_scheduler()
+    try:
+        frontier = scheduler.ready(run_id)
+    except KeyError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps({"run_id": run_id, "frontier": frontier}, indent=2, default=str)
+
+
+async def _tool_dag_submit(
+    run_id: str,
+    node_id: str,
+    step_output: str,
+    ctx: Context[Any, Any, Any] | None = None,
+) -> str:
+    """Submit a node artifact with CDV when MCP sampling is available."""
+    _mark_consulted("dag_submit")
+    scheduler = _get_dag_scheduler()
+    try:
+        result = await scheduler.submit_async(
+            run_id, node_id, step_output, ctx=ctx,
+        )
+    except (KeyError, ValueError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result, indent=2, default=str)
+
+
+def _tool_dag_status(run_id: str) -> str:
+    """Full DAG graph state."""
+    scheduler = _get_dag_scheduler()
+    try:
+        status = scheduler.status(run_id)
+    except KeyError as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(status, indent=2, default=str)
+
+
+def _tool_dag_merge(run_id: str) -> str:
+    """Merge verified DAG node outputs."""
+    scheduler = _get_dag_scheduler()
+    try:
+        result = scheduler.merge(run_id)
+    except (KeyError, ValueError) as exc:
+        return json.dumps({"error": str(exc)})
+    return json.dumps(result, indent=2, default=str)
 
 
 def _tool_list_tasks(
@@ -2395,6 +2538,11 @@ def create_mcp_server() -> Any:
             "you should follow. Do NOT skip this step.\n\n"
             "The intercept tool returns a quality gauge, routing recommendation "
             "(elicit/refine/decompose), and suggestions. Follow its guidance.\n\n"
+            "DAG: for complex, multi-part goals (route=decompose), call "
+            "loopllm_dag_compile with a nodes array (id, role, description, "
+            "dependencies), then loop loopllm_dag_ready -> execute one frontier "
+            "node -> loopllm_dag_submit (CDV-verified) until dag_complete, then "
+            "loopllm_dag_merge.\n\n"
             "For multi-step / iterative tasks (where you plan → act → observe → "
             "repeat), drive the loop through loopllm_loop_start, then "
             "loopllm_loop_step after each step with step_output=<artifact> "
@@ -2793,7 +2941,7 @@ def create_mcp_server() -> Any:
     @mcp.tool(
         name="loopllm_run_status",
         description=(
-            "Return active agent-loop and plan snapshots for IDE "
+            "Return active agent-loop, plan, and DAG run snapshots for IDE "
             "reload recovery after a crash or MCP server restart."
         ),
     )
@@ -2812,6 +2960,65 @@ def create_mcp_server() -> Any:
     )
     def loop_resume(session_id: str | None = None) -> str:
         return _tool_loop_resume(session_id)
+
+    @mcp.tool(
+        name="loopllm_dag_compile",
+        description=(
+            "Compile a DAG of virtual sub-agent nodes for complex multi-step work. "
+            "Pass goal and nodes array (id, role, description, dependencies). "
+            "Injects similar_episodes from episodic memory. IDE agent executes "
+            "one frontier node at a time via dag_ready / dag_submit."
+        ),
+    )
+    def dag_compile(
+        goal: str,
+        nodes: list[dict[str, Any]] | None = None,
+        task_type: str = "general",
+        model_id: str | None = None,
+    ) -> str:
+        return _tool_dag_compile(goal, nodes, task_type, model_id)
+
+    @mcp.tool(
+        name="loopllm_dag_ready",
+        description=(
+            "Return frontier DAG nodes whose dependencies are verified, with "
+            "scoped worker prompts and inputs from completed nodes."
+        ),
+    )
+    def dag_ready(run_id: str) -> str:
+        return _tool_dag_ready(run_id)
+
+    @mcp.tool(
+        name="loopllm_dag_submit",
+        description=(
+            "Submit a DAG node step artifact for CDV scoring. Marks node "
+            "verified or failed; unlocks dependent nodes when accepted."
+        ),
+    )
+    async def dag_submit(
+        run_id: str,
+        node_id: str,
+        step_output: str,
+        ctx: Context[Any, Any, Any] | None = None,
+    ) -> str:
+        return await _tool_dag_submit(run_id, node_id, step_output, ctx)
+
+    @mcp.tool(
+        name="loopllm_dag_status",
+        description="Full DAG graph state: node states, scores, ready frontier.",
+    )
+    def dag_status(run_id: str) -> str:
+        return _tool_dag_status(run_id)
+
+    @mcp.tool(
+        name="loopllm_dag_merge",
+        description=(
+            "Merge verified DAG node outputs in topological order. "
+            "Call when all nodes are verified."
+        ),
+    )
+    def dag_merge(run_id: str) -> str:
+        return _tool_dag_merge(run_id)
 
     @mcp.tool(
         name="loopllm_list_tasks",

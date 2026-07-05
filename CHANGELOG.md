@@ -6,7 +6,93 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.8.0] — unreleased (branch: az/ft/episodic-memory)
+## [0.10.0] — 2026-07-04
+
+### Added
+- New CLI command `loopllm migrate-legacy [--from <path>] [--force]` imports the
+  pre-v0.10 flat global `~/.loopllm/store.db` into the current project's scoped
+  store (WAL-safe `sqlite3` backup, then schema migration on open; the legacy
+  file is left in place). Without it, per-project scoping would silently orphan
+  an existing user's learned priors and episodes. `loopllm paths` now reports a
+  `legacy_store` field, and the MCP server logs a migration hint on startup when
+  a legacy store exists but the project store doesn't yet.
+- **Per-project state scoping**: [`project_scope.py`](src/loopllm/project_scope.py)
+  resolves a stable project id from the git remote (falling back to the repo root,
+  then the working directory) and keys all local state under
+  `~/.loopllm/projects/<id>/` instead of one shared `~/.loopllm/store.db`. Two
+  unrelated repos on the same machine no longer interleave episodes, priors, or
+  active runs. `LOOPLLM_PROJECT` overrides auto-detection.
+- New CLI command `loopllm paths` prints the resolved per-project state file paths
+  as JSON; the VS Code extension uses it to watch the same directory the MCP
+  server and CLI write to, instead of a hardcoded flat path.
+- Fixed a latent bug where `_episodes_feed_path` was never actually persisted to
+  the module global in `_init_state` (missing from the `global` declaration),
+  silently breaking the Loop Monitor's completed-episode feed.
+- Tests: `tests/test_project_scope.py` (env override, git-remote/repo-root/cwd
+  fallback chain, same-remote-same-id, different-remotes-different-ids).
+- **DAG dependency board** in the VS Code Loop Monitor: [`loopMonitorProvider.ts`](vscode-loopllm/src/loopMonitorProvider.ts)
+  now renders `run_type="dag"` active runs as a kanban-style board (Pending /
+  Ready / Running / Verified / Failed columns), with each failed node showing
+  its CDV deficiencies in plain language.
+- Fixed a bug where the Loop Monitor's "Active Loops" panel was silently
+  always empty: [`EpisodicStore`](src/loopllm/episodes.py) only ever mirrored
+  the single most-recently-updated run to one `active_run.json` file, but the
+  extension read from an `active_runs/` *directory* that nothing wrote to.
+  Added a `mirror_dir` option that mirrors every active run as its own
+  `<run_id>.json` file, so multiple concurrent loops/DAG runs all show up.
+- **Verification audit trail**: every episode is now stamped with the git
+  commit that was `HEAD` when it was recorded (schema v6, `commit_sha`
+  column). New CLI command `loopllm audit [--since <ref>] [--json]` reports
+  what the agent did and how it was CDV-verified, scoped to a commit range
+  (`git log <ref>..HEAD`) — e.g. `loopllm audit --since origin/main`.
+- VS Code Loop Monitor gained an **Export audit** button on the DAG board
+  that runs `loopllm audit` and opens the report as a markdown document —
+  the reviewable artifact a tech lead keeps.
+- **Non-consultation signal**: [`mcp_server.py`](src/loopllm/mcp_server.py)
+  stamps a `consultation.json` file whenever the IDE agent actually calls an
+  entry-point tool (`loopllm_intercept`, `loopllm_loop_start`, `loopllm_loop_step`,
+  `loopllm_dag_compile`, `loopllm_dag_submit`) — not passive reads like
+  `run_status`/`recall`. The VS Code Loop Monitor shows an undismissable
+  banner, "PromptLoop has not been consulted this session," whenever the user
+  has been editing but no entry-point tool has fired since the panel
+  activated. This is the only realistic enforcement lever MCP allows: silent
+  non-adoption becomes a visible signal instead of going unnoticed.
+- New CLI command `loopllm install-mcp --ide {cursor,vscode,antigravity,claude-code,all}`
+  merges a `loopllm` MCP server entry into the target IDE's config (Cursor
+  `mcpServers`, VS Code/Antigravity `servers` + `type: stdio`, Claude Code's
+  project-scoped `.mcp.json`) instead of requiring hand-edited JSON. Preserves
+  any other configured servers; `--force` overwrites an existing `loopllm`
+  entry; invalid existing JSON is left untouched rather than risked.
+- README now leads with the one-sentence pitch and a DAG board demo GIF
+  (`.github/assets/dag-board.gif`, generated from real `loopllm_dag_*` tool calls
+  via `scripts/generate_dag_board_gif.py`) instead of the MCP tool count.
+- **Minimal public repo tree**: `examples/`, `benchmarks/`, `AUDIT.md`,
+  `_scratch/`, `scripts/audit_cdv_loop.py`, and the old `img/` gallery are no
+  longer tracked (kept locally and in git history, just untracked going
+  forward). The public tree is now the `loopllm` package, the `vscode-loopllm`
+  extension, tests, CI, and IDE-adoption files (`.cursor/rules/loopllm.mdc`,
+  `.github/copilot-instructions.md`) — README-embedded images moved to
+  `.github/assets/` rather than a distinct top-level `img/` gallery.
+
+## [0.9.0] — 2026-07-04
+
+### Added
+- **DAG virtual sub-agents**: [`DagScheduler`](src/loopllm/dag_scheduler.py) compiles a
+  goal + node spec (id, role, description, dependencies) into a dependency-ordered
+  graph, hands the IDE agent one frontier node at a time, and scores each submission
+  through the existing Conservative Dual-Verify path — no new verification model.
+- New tools: `loopllm_dag_compile`, `loopllm_dag_ready`, `loopllm_dag_submit`,
+  `loopllm_dag_status`, `loopllm_dag_merge` (**36 tools total**).
+- `loopllm_intercept`'s `route: decompose` now points at `loopllm_dag_compile`
+  instead of the plain synchronous `loopllm_plan_tasks` pipeline.
+- Verified DAG nodes are recorded as `plan_node` episodes; a merged run is recorded
+  as a `dag` episode and its active-run snapshot is cleared — DAG runs recover
+  through the same `loopllm_run_status` snapshot as agent loops.
+- Tests: `tests/test_dag_scheduler.py` (scheduler unit tests: compile/ready/submit/
+  merge, cycle detection, restore); `test_tool_dag_compile_ready_submit_status_merge`
+  in `tests/test_mcp_episodic.py` (full MCP-tool-level DAG lifecycle).
+
+## [0.8.0] — 2026-06-23
 
 ### Added
 - **Episodic memory** (SQLite schema v5): `episodes` and `active_runs` tables.

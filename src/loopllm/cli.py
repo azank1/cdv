@@ -3,17 +3,85 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from loopllm.elicitation import ClarifyingQuestion, IntentRefiner
 from loopllm.engine import LoopConfig, LoopedLLM
 from loopllm.evaluators import LengthEvaluator
 from loopllm.priors import CallObservation
+from loopllm.project_scope import (
+    commits_since,
+    legacy_store_path,
+    resolve_db_path,
+    resolve_project_id,
+)
 from loopllm.provider import LLMProvider
 from loopllm.store import LoopStore, SQLiteBackedPriors
 from loopllm.tasks import TaskOrchestrator
+
+# ---------------------------------------------------------------------------
+# `loopllm install-mcp` — one-command MCP registration per IDE
+# ---------------------------------------------------------------------------
+
+
+def _user_config_dir(app_name: str) -> Path:
+    """OS-appropriate per-user config directory for a VS Code-family app."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / app_name
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+        return base / app_name
+    return Path.home() / ".config" / app_name
+
+
+class _IdeTarget:
+    """Where and how to write the loopllm MCP server entry for one IDE."""
+
+    def __init__(self, name: str, path_fn: Callable[[], Path], key: str, vscode_style: bool):
+        self.name = name
+        self.path_fn = path_fn
+        self.key = key
+        self.vscode_style = vscode_style
+
+
+_IDE_TARGETS: dict[str, _IdeTarget] = {
+    "cursor": _IdeTarget(
+        "cursor", lambda: Path.home() / ".cursor" / "mcp.json", "mcpServers", False
+    ),
+    "vscode": _IdeTarget(
+        "vscode", lambda: _user_config_dir("Code") / "User" / "mcp.json", "servers", True
+    ),
+    "antigravity": _IdeTarget(
+        "antigravity",
+        lambda: _user_config_dir("Antigravity") / "User" / "mcp.json",
+        "servers",
+        True,
+    ),
+    "claude-code": _IdeTarget(
+        "claude-code", lambda: Path.cwd() / ".mcp.json", "mcpServers", False
+    ),
+}
+
+# "all" excludes claude-code — it's project-scoped (writes to the current
+# directory) and gets committed to git, so it should be opted into explicitly
+# rather than dropped into whatever directory the user happened to run from.
+_ALL_IDES = ["cursor", "vscode", "antigravity"]
+
+
+def _mcp_server_entry(vscode_style: bool, provider: str, model: str) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "command": "loopllm",
+        "args": ["mcp-server", "--provider", provider],
+        "env": {"LOOPLLM_MODEL": model},
+    }
+    if vscode_style:
+        entry = {"type": "stdio", **entry}
+    return entry
 
 
 def _get_provider(name: str, **kwargs: Any) -> LLMProvider:
@@ -58,11 +126,8 @@ def _get_provider(name: str, **kwargs: Any) -> LLMProvider:
 
 
 def _get_store(db_path: str | None) -> LoopStore:
-    """Create a LoopStore, defaulting to ~/.loopllm/store.db."""
-    if db_path:
-        path = Path(db_path)
-    else:
-        path = Path.home() / ".loopllm" / "store.db"
+    """Create a LoopStore, defaulting to a per-project ~/.loopllm/projects/<id>/store.db."""
+    path = resolve_db_path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     return LoopStore(db_path=path)
 
@@ -224,14 +289,13 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_score(args: argparse.Namespace) -> None:
-    """Score a prompt and update ~/.loopllm/status.json for the VS Code extension.
+    """Score a prompt and update status.json (per-project) for the VS Code extension.
 
     This is the same scoring used by loopllm_intercept but runs standalone,
     with no MCP server or agent required. The extension watches status.json
     via fs.watch and updates the gauge and dashboard immediately.
     """
     import time
-    from pathlib import Path
 
     # Import scorer — mcp import is guarded so this is safe even without mcp pkg
     from loopllm.mcp_server import (
@@ -251,7 +315,7 @@ def cmd_score(args: argparse.Namespace) -> None:
     quality = _score_prompt_quality(prompt)
     task_type = _classify_task_type(prompt)
 
-    db_path = Path(args.db) if args.db else Path.home() / ".loopllm" / "store.db"
+    db_path = resolve_db_path(args.db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     status_path = db_path.parent / "status.json"
     history_path = db_path.parent / "prompt_history.json"
@@ -330,6 +394,186 @@ def cmd_tasks_show(args: argparse.Namespace) -> None:
     store.close()
 
 
+def cmd_paths(args: argparse.Namespace) -> None:
+    """Print resolved per-project state file paths as JSON.
+
+    Used by the VS Code extension so it watches the same per-project
+    directory the MCP server and CLI write to, instead of hardcoding the
+    legacy flat ``~/.loopllm/`` layout.
+    """
+    db_path = resolve_db_path(args.db)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = legacy_store_path()
+    payload = {
+        "project_id": resolve_project_id(),
+        "dir": str(db_path.parent),
+        "db": str(db_path),
+        "status": str(db_path.parent / "status.json"),
+        "history": str(db_path.parent / "prompt_history.json"),
+        "episodes_feed": str(db_path.parent / "episodes_feed.json"),
+        "active_run": str(db_path.parent / "active_run.json"),
+        "active_runs_dir": str(db_path.parent / "active_runs"),
+        "consultation": str(db_path.parent / "consultation.json"),
+        # Pre-v0.10 flat global store, if one exists and isn't already the
+        # resolved db — a hint that `loopllm migrate-legacy` applies here.
+        "legacy_store": (
+            str(legacy)
+            if legacy is not None and legacy.resolve() != db_path.resolve()
+            else None
+        ),
+    }
+    print(json.dumps(payload, indent=2))
+
+
+def cmd_audit(args: argparse.Namespace) -> None:
+    """Print a human-readable verification audit trail: what the agent did, and how it was verified.
+
+    Every episode (agent-loop, DAG-node, or DAG-merge outcome) is stamped with
+    the git commit that was HEAD when it was recorded. ``--since <ref>``
+    scopes the report to episodes recorded on commits reachable from HEAD but
+    not from *ref* (i.e. ``git log <ref>..HEAD``) — e.g. ``--since origin/main``
+    to audit everything on the current branch.
+    """
+    store = _get_store(args.db)
+    episodes = store.list_episodes(limit=args.limit)
+
+    if args.since:
+        commit_set = commits_since(args.since)
+        if commit_set is None:
+            print(
+                f"Warning: could not resolve commit range for '{args.since}' "
+                "(not a git repo, or ref doesn't exist) — showing all episodes.",
+                file=sys.stderr,
+            )
+        else:
+            episodes = [e for e in episodes if e.get("commit_sha") in commit_set]
+
+    if args.json:
+        print(json.dumps(episodes, indent=2, default=str))
+        store.close()
+        return
+
+    if not episodes:
+        print("No verification episodes recorded" + (f" since {args.since}." if args.since else "."))
+        store.close()
+        return
+
+    scores = [e["score_final"] for e in episodes if e.get("score_final") is not None]
+    avg_score = sum(scores) / len(scores) if scores else None
+
+    print(f"=== Verification Audit{' (since ' + args.since + ')' if args.since else ''} ===")
+    print(f"{len(episodes)} episode(s)" + (f" · avg score {avg_score:.2f}" if avg_score is not None else ""))
+    print()
+
+    for ep in episodes:
+        commit = (ep.get("commit_sha") or "")[:7] or "no-commit"
+        score = ep.get("score_final")
+        score_str = f"{score:.2f}" if score is not None else "—"
+        steps = ep.get("steps_used")
+        steps_str = f"{steps} step(s)" if steps is not None else ""
+        stop = (ep.get("stop_reason") or "").replace("_", " ")
+        print(f"[{commit}] {ep['episode_type']:10s} score={score_str}  {ep['goal'][:70]}")
+        meta = "  ".join(x for x in (ep.get("task_type", ""), steps_str, stop) if x)
+        if meta:
+            print(f"          {meta}")
+
+    store.close()
+
+
+def cmd_migrate_legacy(args: argparse.Namespace) -> None:
+    """Copy the pre-v0.10 global store into this project's scoped store.
+
+    Before v0.10 every project shared one ``~/.loopllm/store.db``. State is
+    now scoped per project (``~/.loopllm/projects/<id>/store.db``), which
+    leaves an existing global store invisible — its learned priors and
+    episodes would be silently orphaned. This command imports it, once,
+    explicitly: run it from each project that should inherit the legacy
+    history. The legacy file is left in place.
+    """
+    source = Path(args.source) if args.source else (Path.home() / ".loopllm" / "store.db")
+    dest = resolve_db_path(args.db)
+
+    if not source.exists():
+        print(f"No legacy store found at {source} — nothing to migrate.")
+        return
+    if dest.exists() and source.samefile(dest):
+        print(f"{dest} already is the legacy store — nothing to migrate.")
+        return
+    if dest.exists() and not args.force:
+        print(
+            f"Refusing to overwrite existing project store {dest} (use --force).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # sqlite3 backup, not a file copy: carries WAL pages that a raw copy of
+    # just store.db would lose if the last writer wasn't checkpointed.
+    src_conn = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    try:
+        dst_conn = sqlite3.connect(dest)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
+
+    store = LoopStore(db_path=dest)  # opening runs any pending schema migrations
+    episode_count = len(store.list_episodes(limit=100_000))
+    store.close()
+    print(
+        f"Migrated {source} -> {dest} ({episode_count} episode(s)). "
+        "The legacy file was left in place."
+    )
+
+
+def cmd_install_mcp(args: argparse.Namespace) -> None:
+    """Register the loopllm MCP server in one or more IDE configs, one command.
+
+    Merges a ``loopllm`` entry into each target's existing MCP config —
+    other configured servers (e.g. GitHub's MCP server) are preserved.
+    Cursor/VS Code/Antigravity are user-scoped (``~/.cursor/mcp.json`` etc.);
+    Claude Code is project-scoped (``.mcp.json`` in the current directory,
+    meant to be committed so the whole team gets the same server).
+    """
+    requested = args.ide if args.ide != "all" else _ALL_IDES
+    ides = [requested] if isinstance(requested, str) else requested
+
+    for ide_name in ides:
+        target = _IDE_TARGETS.get(ide_name)
+        if target is None:
+            print(f"Unknown IDE: {ide_name}", file=sys.stderr)
+            continue
+
+        path = target.path_fn()
+        try:
+            existing: dict[str, Any] = json.loads(path.read_text()) if path.exists() else {}
+        except json.JSONDecodeError:
+            print(
+                f"[{ide_name}] {path} has invalid JSON — skipping rather than "
+                "risk corrupting it. Fix or remove it and re-run.",
+                file=sys.stderr,
+            )
+            continue
+
+        servers = dict(existing.get(target.key, {}))
+        if args.name in servers and not args.force:
+            print(f"[{ide_name}] '{args.name}' already configured at {path} (use --force to overwrite)")
+            continue
+
+        servers[args.name] = _mcp_server_entry(target.vscode_style, args.provider, args.model)
+        existing[target.key] = servers
+        if target.vscode_style and "inputs" not in existing:
+            existing["inputs"] = []
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(existing, indent=2) + "\n")
+        print(f"[{ide_name}] wrote {path}")
+
+    print("\nRestart the IDE (or reload its MCP servers) to pick up the change.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the ``loopllm`` CLI."""
     parser = argparse.ArgumentParser(
@@ -338,7 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--db", default=None,
-        help="Path to SQLite database (default: ~/.loopllm/store.db)",
+        help="Path to SQLite database (default: per-project ~/.loopllm/projects/<id>/store.db)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -425,6 +669,63 @@ def build_parser() -> argparse.ArgumentParser:
     p_tshow.add_argument("task_id", help="Task ID")
     p_tshow.set_defaults(func=cmd_tasks_show)
 
+    # --- paths ---
+    # Note: --db is intentionally *not* redeclared here — it reads from the
+    # top-level --db (parser.add_argument("--db", ...) above), so `loopllm
+    # --db X paths` and `loopllm paths` both work as expected.
+    p_paths = subparsers.add_parser(
+        "paths", help="Print resolved per-project state file paths as JSON"
+    )
+    p_paths.set_defaults(func=cmd_paths)
+
+    # --- audit ---
+    p_audit = subparsers.add_parser(
+        "audit",
+        help="Verification audit trail: what the agent did, and how it was CDV-verified",
+    )
+    p_audit.add_argument(
+        "--since", default=None,
+        help="Git ref (branch/tag/commit) to scope the report to — episodes "
+             "recorded since this ref diverged from HEAD",
+    )
+    p_audit.add_argument("--limit", type=int, default=200, help="Max episodes to scan")
+    p_audit.add_argument("--json", action="store_true", help="Output JSON instead of a report")
+    p_audit.set_defaults(func=cmd_audit)
+
+    # --- migrate-legacy ---
+    p_migrate = subparsers.add_parser(
+        "migrate-legacy",
+        help="Import the pre-v0.10 global ~/.loopllm/store.db into this project's scoped store",
+    )
+    p_migrate.add_argument(
+        "--from", dest="source", default=None,
+        help="Legacy store path (default: ~/.loopllm/store.db)",
+    )
+    p_migrate.add_argument(
+        "--force", action="store_true",
+        help="Overwrite an existing project store",
+    )
+    p_migrate.set_defaults(func=cmd_migrate_legacy)
+
+    # --- install-mcp ---
+    p_install = subparsers.add_parser(
+        "install-mcp",
+        help="Register the loopllm MCP server in Cursor/VS Code/Antigravity/Claude Code — one command",
+    )
+    p_install.add_argument(
+        "--ide", default="all",
+        choices=["all", *sorted(_IDE_TARGETS.keys())],
+        help="Target IDE ('all' = cursor+vscode+antigravity; claude-code is opt-in "
+             "since it writes a project-scoped .mcp.json in the current directory)",
+    )
+    p_install.add_argument("--name", default="loopllm", help="MCP server name to register")
+    p_install.add_argument("--provider", default="agent", help="LOOPLLM provider (default: agent)")
+    p_install.add_argument("--model", default="agent", help="LOOPLLM_MODEL env value to set")
+    p_install.add_argument(
+        "--force", action="store_true", help="Overwrite an existing entry with this name"
+    )
+    p_install.set_defaults(func=cmd_install_mcp)
+
     # --- mcp-server ---
     p_mcp = subparsers.add_parser(
         "mcp-server", help="Start MCP server for IDE integration (VS Code, Cursor)"
@@ -440,7 +741,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_mcp.add_argument(
         "--db", default=None,
-        help="Path to SQLite database (default: ~/.loopllm/store.db)",
+        help="Path to SQLite database (default: per-project ~/.loopllm/projects/<id>/store.db)",
     )
     p_mcp.set_defaults(func=cmd_mcp_server)
 
