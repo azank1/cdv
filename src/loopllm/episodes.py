@@ -1,10 +1,11 @@
 """Episodic memory: record and recall completed loop/plan outcomes.
 
-Recall ranking is deterministic weighted keyword overlap (see
+Recall ranking uses SQLite FTS5 (BM25 over goal+summary+tags) when the SQLite
+build supports it, blended with tag/task_type boosts and a recency tie-break;
+it falls back to deterministic keyword overlap otherwise (see
 ``store.search_episodes``). The public ``EpisodicStore.recall`` /
 ``store.search_episodes`` signature is stable, so the ranking backend can be
-upgraded to SQLite FTS5 (a virtual table over goal+summary+tags, no new deps)
-or an embedding index later without touching callers — planned for v0.12.
+swapped for an embedding index later without touching callers.
 """
 from __future__ import annotations
 

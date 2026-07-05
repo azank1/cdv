@@ -24,7 +24,7 @@ from loopllm.priors import (
 
 logger = structlog.get_logger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Common words ignored during episodic recall so generic terms don't dominate.
 _RECALL_STOPWORDS = frozenset({
@@ -197,6 +197,35 @@ ALTER TABLE episodes ADD COLUMN commit_sha TEXT;
 CREATE INDEX IF NOT EXISTS idx_episodes_commit_sha ON episodes(commit_sha);
 """
 
+# v7: an FTS5 full-text index over episodes for BM25-ranked recall. Built by
+# LoopStore._ensure_fts5 rather than a hard migration script, because SQLite
+# FTS5 is a compile-time option that may be absent — recall degrades to the
+# deterministic keyword scorer when it is. External-content table (no duplicate
+# storage) kept in sync with `episodes` via triggers.
+_SCHEMA_FTS5_SQL = """\
+CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(
+    goal, summary, tags,
+    content='episodes', content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS episodes_fts_ai AFTER INSERT ON episodes BEGIN
+    INSERT INTO episodes_fts(rowid, goal, summary, tags)
+    VALUES (new.id, new.goal, new.summary, new.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS episodes_fts_ad AFTER DELETE ON episodes BEGIN
+    INSERT INTO episodes_fts(episodes_fts, rowid, goal, summary, tags)
+    VALUES ('delete', old.id, old.goal, old.summary, old.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS episodes_fts_au AFTER UPDATE ON episodes BEGIN
+    INSERT INTO episodes_fts(episodes_fts, rowid, goal, summary, tags)
+    VALUES ('delete', old.id, old.goal, old.summary, old.tags);
+    INSERT INTO episodes_fts(rowid, goal, summary, tags)
+    VALUES (new.id, new.goal, new.summary, new.tags);
+END;
+"""
+
 
 class LoopStore:
     """SQLite-backed store for loop-llm state.
@@ -213,7 +242,47 @@ class LoopStore:
         self.db_path = str(db_path)
         self._lock = threading.RLock()
         self._conn: sqlite3.Connection | None = None
+        self._fts5 = self._probe_fts5()
         self._ensure_schema()
+        self._ensure_fts5()
+
+    @staticmethod
+    def _probe_fts5() -> bool:
+        """Return True if this SQLite build supports FTS5 virtual tables."""
+        try:
+            probe = sqlite3.connect(":memory:")
+            try:
+                probe.execute("CREATE VIRTUAL TABLE _fts_probe USING fts5(x)")
+            finally:
+                probe.close()
+            return True
+        except sqlite3.OperationalError:
+            return False
+
+    def _ensure_fts5(self) -> None:
+        """Create and backfill the FTS5 recall index if FTS5 is available.
+
+        Idempotent and self-healing: safe to call on every open. Rebuilds the
+        index when it is missing or out of sync with ``episodes`` (e.g. a store
+        first created on a SQLite build without FTS5, then opened on one with
+        it). A no-op when FTS5 is unavailable — recall falls back to the
+        deterministic keyword scorer.
+        """
+        if not self._fts5:
+            return
+        with self._connection() as conn:
+            # An external-content FTS table proxies episodes for COUNT(*), so a
+            # row count can't tell us whether the index is populated. Instead,
+            # rebuild exactly when we just created the table (fresh DB or a
+            # v6->v7 migration with pre-existing episodes); once it exists, the
+            # sync triggers keep it current on every insert/update/delete.
+            existed = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='episodes_fts'"
+            ).fetchone() is not None
+            conn.executescript(_SCHEMA_FTS5_SQL)
+            if not existed:
+                conn.execute("INSERT INTO episodes_fts(episodes_fts) VALUES ('rebuild')")
+            conn.commit()
 
     # -- connection management -----------------------------------------------
 
@@ -1210,35 +1279,78 @@ class LoopStore:
         task_type: str | None = None,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        """Recall episodes by weighted keyword overlap over goal/summary/tags.
+        """Recall past episodes most relevant to *query*.
 
-        Scoring is deterministic term-overlap (not BM25): each distinct query
-        term contributes its occurrence count in goal+summary, with extra weight
-        when it matches a tag or the task_type. Ties break toward more recent
-        episodes. The public signature is intentionally stable so a SQLite FTS5
-        backend can replace this body later without changing callers (see the
-        FTS5 upgrade path note in ``episodes.py``).
+        When SQLite FTS5 is available, relevance is BM25 over goal/summary/tags,
+        blended with the same tag/task_type boosts and recency tie-break as the
+        keyword scorer, so results are a strict improvement rather than a reset.
+        When FTS5 is absent (or the MATCH query fails), it degrades to the
+        deterministic keyword-overlap scorer. The public signature is stable —
+        callers (``EpisodicStore.recall``, MCP) don't know which path ran.
         """
-        candidates = self.list_episodes(task_type=task_type, limit=max(limit * 20, 50))
         terms = _recall_terms(query)
         if not terms:
-            return candidates[:limit]
+            return self.list_episodes(task_type=task_type, limit=limit)
+        if self._fts5:
+            try:
+                return self._search_episodes_fts(terms, task_type, limit)
+            except sqlite3.OperationalError:
+                pass  # e.g. index not yet built — fall back to keyword scan
+        return self._search_episodes_keyword(terms, task_type, limit)
 
+    def _blend_boosts(self, ep: dict[str, Any], terms: list[str], base: float) -> float:
+        """Add tag / task_type boosts to a base relevance score."""
+        tag_blob = " ".join(ep.get("tags") or []).lower()
+        tt = (ep.get("task_type") or "").lower()
+        score = base
+        for term in terms:
+            if term in tag_blob:
+                score += 2.0          # tag match boost
+            if term == tt:
+                score += 1.5          # task_type match boost
+        return score
+
+    def _search_episodes_fts(
+        self, terms: list[str], task_type: str | None, limit: int
+    ) -> list[dict[str, Any]]:
+        """BM25-ranked recall via the FTS5 index, blended with boosts + recency."""
+        match_query = " OR ".join(terms)  # terms are pre-sanitised word tokens
+        sql = (
+            "SELECT e.*, bm25(episodes_fts) AS _rank "
+            "FROM episodes_fts JOIN episodes e ON e.id = episodes_fts.rowid "
+            "WHERE episodes_fts MATCH ?"
+        )
+        params: list[Any] = [match_query]
+        if task_type:
+            sql += " AND e.task_type = ?"
+            params.append(task_type)
+        sql += " ORDER BY _rank LIMIT ?"
+        params.append(max(limit * 20, 50))
+        with self._connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+
+        scored: list[tuple[float, str, dict[str, Any]]] = []
+        for row in rows:
+            ep = self._row_to_episode(row)
+            # bm25() is more-negative-is-better; flip so higher == more relevant.
+            relevance = -float(row["_rank"])
+            score = self._blend_boosts(ep, terms, relevance)
+            scored.append((score, ep.get("recorded_at") or "", ep))
+        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        return [ep for _, _, ep in scored[:limit]]
+
+    def _search_episodes_keyword(
+        self, terms: list[str], task_type: str | None, limit: int
+    ) -> list[dict[str, Any]]:
+        """Deterministic term-overlap recall (FTS5-free fallback)."""
+        candidates = self.list_episodes(task_type=task_type, limit=max(limit * 20, 50))
         scored: list[tuple[float, str, dict[str, Any]]] = []
         for ep in candidates:
             text = f"{ep['goal']} {ep['summary']}".lower()
-            tag_blob = " ".join(ep.get("tags") or []).lower()
-            tt = (ep.get("task_type") or "").lower()
-            score = 0.0
-            for term in terms:
-                score += text.count(term)              # base term frequency
-                if term in tag_blob:
-                    score += 2.0                       # tag match boost
-                if term == tt:
-                    score += 1.5                       # task_type match boost
+            base = float(sum(text.count(term) for term in terms))  # term frequency
+            score = self._blend_boosts(ep, terms, base)
             if score > 0:
                 scored.append((score, ep.get("recorded_at") or "", ep))
-
         # Highest score first; recency (recorded_at desc) breaks ties.
         scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
         return [ep for _, _, ep in scored[:limit]]

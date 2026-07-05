@@ -12,7 +12,7 @@ from loopllm.priors import (
     NormalPrior,
     TaskModelPrior,
 )
-from loopllm.store import LoopStore, SQLiteBackedPriors
+from loopllm.store import SCHEMA_VERSION, LoopStore, SQLiteBackedPriors
 
 
 @pytest.fixture()
@@ -51,7 +51,7 @@ class TestSchema:
         with store._connection() as conn:
             row = conn.execute("SELECT version FROM schema_version").fetchone()
         assert row is not None
-        assert row["version"] == 6
+        assert row["version"] == SCHEMA_VERSION == 7
 
 
 # -- priors CRUD -------------------------------------------------------------

@@ -13,8 +13,8 @@ def _git(args: list[str], cwd) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
-def test_migration_v4_to_v6(tmp_path) -> None:
-    """A pre-existing v4 database gains the v5 episodic tables and v6 commit_sha column."""
+def test_migration_v4_to_current(tmp_path) -> None:
+    """A pre-existing v4 database gains v5 episodic tables, v6 commit_sha, v7 FTS index."""
     db = tmp_path / "old.db"
     conn = sqlite3.connect(db)
     conn.executescript(
@@ -31,9 +31,12 @@ def test_migration_v4_to_v6(tmp_path) -> None:
             r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         episode_cols = {r[1] for r in c.execute("PRAGMA table_info(episodes)")}
-    assert version == SCHEMA_VERSION == 6
+    assert version == SCHEMA_VERSION == 7
     assert {"episodes", "active_runs"} <= tables
     assert "commit_sha" in episode_cols
+    # FTS5 recall index is built when the SQLite build supports it.
+    if store._fts5:
+        assert "episodes_fts" in tables
 
 
 def test_recall_ranks_relevant_first_with_tag_boost(store: LoopStore) -> None:
