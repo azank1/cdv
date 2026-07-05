@@ -73,11 +73,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   extension, tests, CI, and IDE-adoption files (`.cursor/rules/loopllm.mdc`,
   `.github/copilot-instructions.md`) — README-embedded images moved to
   `.github/assets/` rather than a distinct top-level `img/` gallery.
-
-## [0.9.0] — 2026-07-04
-
-### Added
-- **DAG virtual sub-agents**: [`DagScheduler`](src/loopllm/dag_scheduler.py) compiles a
+- **DAG virtual sub-agents** (developed as v0.9, released together as 0.10.0
+  since it never shipped standalone): [`DagScheduler`](src/loopllm/dag_scheduler.py) compiles a
   goal + node spec (id, role, description, dependencies) into a dependency-ordered
   graph, hands the IDE agent one frontier node at a time, and scores each submission
   through the existing Conservative Dual-Verify path — no new verification model.
