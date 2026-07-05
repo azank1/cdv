@@ -1,0 +1,88 @@
+name: "loopllm audit gate"
+description: >
+  Fail a PR when code-touching commits lack a loopllm Conservative
+  Dual-Verify record, using the committed `.loopllm/audit.json` artifact
+  (see RELEASING.md / README "Verification audit trail"). Report-only
+  unless `min-score` or `require-verified` is set, so a team can dogfood
+  the report before turning on enforcement.
+author: "loopllm"
+
+inputs:
+  since:
+    description: >
+      Git ref the commit range is scoped against (e.g. origin/main, or
+      `origin/${{ github.event.pull_request.base.ref }}` in a pull_request
+      workflow). Required.
+    required: true
+  artifact:
+    description: "Path to the committed audit artifact"
+    required: false
+    default: ".loopllm/audit.json"
+  min-score:
+    description: "Fail commits scoring below this threshold (also fails commits with no record)"
+    required: false
+    default: ""
+  require-verified:
+    description: "Fail commits with no verification record at all ('true'/'false')"
+    required: false
+    default: "false"
+  python-version:
+    description: "Python version to run the gate with"
+    required: false
+    default: "3.12"
+  pip-spec:
+    description: >
+      What to `pip install` to get the `loopllm` CLI. Defaults to the
+      published PyPI package; override to a local path (e.g. `.`) when
+      calling this action from within the loop-llm repo's own checkout.
+    required: false
+    default: "loopllm"
+
+outputs:
+  result:
+    description: "'pass' or 'fail'"
+    value: ${{ steps.gate.outputs.result }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install loopllm
+      shell: bash
+      run: pip install "${{ inputs.pip-spec }}"
+
+    - name: Run audit gate
+      id: gate
+      shell: bash
+      run: |
+        set +e
+        args=(--since "${{ inputs.since }}" --artifact "${{ inputs.artifact }}")
+        if [ -n "${{ inputs.min-score }}" ]; then
+          args+=(--min-score "${{ inputs.min-score }}")
+        fi
+        if [ "${{ inputs.require-verified }}" = "true" ]; then
+          args+=(--require-verified)
+        fi
+        loopllm audit-gate "${args[@]}" > gate_output.txt
+        status=$?
+        set -e
+
+        {
+          echo "### loopllm audit gate"
+          echo
+          echo '```'
+          cat gate_output.txt
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        cat gate_output.txt
+        if [ "$status" -eq 0 ]; then
+          echo "result=pass" >> "$GITHUB_OUTPUT"
+        else
+          echo "result=fail" >> "$GITHUB_OUTPUT"
+        fi
+        exit "$status"

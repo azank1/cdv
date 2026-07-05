@@ -1,0 +1,26 @@
+name: loopllm audit gate
+
+# Report-only by default: this checks every PR against this repo's own
+# committed .loopllm/audit.json (if any exist) and posts a summary, but
+# does not fail the build. Add `min-score` / `require-verified` to the
+# `with:` block below once the team is ready to enforce it — see
+# RELEASING.md and .github/actions/loopllm-gate/action.yml.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/loopllm-gate
+        with:
+          since: origin/${{ github.event.pull_request.base.ref }}
+          pip-spec: "."
