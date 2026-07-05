@@ -27,6 +27,15 @@ venv/
 # Local docs (not published)
 docs/
 
+# Legacy/local-only assets and dev scratch — kept on disk, not in the repo tree.
+# README images live in .github/assets/ instead of a distinct browsable img/ gallery.
+/img/
+/AUDIT.md
+/examples/
+/benchmarks/
+/scripts/audit_cdv_loop.py
+/tests/test_benchmark.py
+
 # mypy
 .mypy_cache/
 
@@ -48,6 +57,5 @@ priors.json
 vscode-loopllm/out/
 *.vsix
 
-# Scratch / template holder (keep dir, ignore contents)
-_scratch/*
-!_scratch/.gitkeep
+# Scratch space — local only, not part of the public repo tree
+/_scratch/

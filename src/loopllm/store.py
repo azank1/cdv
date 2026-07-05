@@ -24,7 +24,7 @@ from loopllm.priors import (
 
 logger = structlog.get_logger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Common words ignored during episodic recall so generic terms don't dominate.
 _RECALL_STOPWORDS = frozenset({
@@ -189,6 +189,14 @@ CREATE INDEX IF NOT EXISTS idx_episodes_goal ON episodes(goal);
 CREATE INDEX IF NOT EXISTS idx_episodes_recorded ON episodes(recorded_at);
 """
 
+# v6: link episodes to the git commit that was HEAD when they were recorded,
+# so `loopllm audit` can build a verification trail scoped to a commit range.
+_SCHEMA_V6_SQL = """\
+ALTER TABLE episodes ADD COLUMN commit_sha TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_episodes_commit_sha ON episodes(commit_sha);
+"""
+
 
 class LoopStore:
     """SQLite-backed store for loop-llm state.
@@ -233,6 +241,7 @@ class LoopStore:
                 conn.executescript(_SCHEMA_V3_SQL)
                 conn.executescript(_SCHEMA_V4_SQL)
                 conn.executescript(_SCHEMA_V5_SQL)
+                conn.executescript(_SCHEMA_V6_SQL)
                 conn.execute(
                     "INSERT INTO schema_version (version) VALUES (?)",
                     (SCHEMA_VERSION,),
@@ -262,6 +271,8 @@ class LoopStore:
             conn.executescript(_SCHEMA_V4_SQL)
         if from_v < 5:
             conn.executescript(_SCHEMA_V5_SQL)
+        if from_v < 6:
+            conn.executescript(_SCHEMA_V6_SQL)
         conn.execute("UPDATE schema_version SET version = ?", (to_v,))
         conn.commit()
 
@@ -1141,6 +1152,7 @@ class LoopStore:
         score_final: float | None = None,
         steps_used: int | None = None,
         stop_reason: str | None = None,
+        commit_sha: str | None = None,
     ) -> int:
         """Persist one completed loop/plan episode."""
         now = datetime.now(timezone.utc).isoformat()
@@ -1149,8 +1161,8 @@ class LoopStore:
                 """INSERT INTO episodes (
                        episode_type, goal, task_type, model_id, summary,
                        artifact_ref, tags, score_final, steps_used,
-                       stop_reason, recorded_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       stop_reason, recorded_at, commit_sha
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     episode_type,
                     goal,
@@ -1163,6 +1175,7 @@ class LoopStore:
                     steps_used,
                     stop_reason,
                     now,
+                    commit_sha,
                 ),
             )
             conn.commit()
@@ -1313,6 +1326,7 @@ class LoopStore:
             "steps_used": row["steps_used"],
             "stop_reason": row["stop_reason"],
             "recorded_at": row["recorded_at"],
+            "commit_sha": row["commit_sha"],
         }
 
 

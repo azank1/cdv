@@ -36,6 +36,48 @@ function buildEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: `${extras}:${process.env.PATH ?? ""}` };
 }
 
+/**
+ * Ask `loopllm paths` for the per-project state directory (scoped by git
+ * remote / repo root, see src/loopllm/project_scope.py) so the extension
+ * watches the same files the MCP server and CLI write to. Falls back to the
+ * legacy flat `~/.loopllm/` layout if the CLI isn't reachable yet.
+ */
+function resolveLoopllmPaths(
+  configuredDbPath: string | undefined,
+  home: string,
+  wsRoot: string | undefined
+): { dbPath: string; statusPath: string } {
+  const legacy = {
+    dbPath: `${home}/.loopllm/store.db`,
+    statusPath: `${home}/.loopllm/status.json`,
+  };
+  if (configuredDbPath) {
+    return {
+      dbPath: configuredDbPath,
+      statusPath: `${configuredDbPath.replace(/\/[^/]+$/, "")}/status.json`,
+    };
+  }
+  try {
+    const output = cp.execFileSync("loopllm", ["paths"], {
+      cwd: wsRoot,
+      env: buildEnv(),
+      timeout: 5000,
+      encoding: "utf8",
+    });
+    const parsed = JSON.parse(output) as { db?: string; status?: string };
+    if (parsed.db && parsed.status) {
+      return { dbPath: parsed.db, statusPath: parsed.status };
+    }
+  } catch (err) {
+    console.warn(
+      "loopllm: could not resolve per-project paths (is loopllm on PATH?); " +
+        "falling back to legacy ~/.loopllm/ layout",
+      err
+    );
+  }
+  return legacy;
+}
+
 /** Spawn `loopllm score <text>` — writes status.json which StatusWatcher picks up. */
 function triggerScore(text: string, dbPath: string): void {
   const trimmed = text.trim();
@@ -54,12 +96,18 @@ function triggerScore(text: string, dbPath: string): void {
 export function activate(context: vscode.ExtensionContext): void {
   const config = vscode.workspace.getConfiguration("loopllm");
 
-  // Resolve paths
+  // Resolve paths — scoped per-project via `loopllm paths` unless the user
+  // pinned an explicit dbPath in settings (see resolveLoopllmPaths above).
   const home = process.env.HOME || process.env.USERPROFILE || "~";
-  const dbPath =
-    config.get<string>("dbPath") || `${home}/.loopllm/store.db`;
+  const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const resolved = resolveLoopllmPaths(
+    config.get<string>("dbPath"),
+    home,
+    wsRoot
+  );
+  const dbPath = resolved.dbPath;
   const statusFilePath =
-    config.get<string>("statusFilePath") || `${home}/.loopllm/status.json`;
+    config.get<string>("statusFilePath") || resolved.statusPath;
   const pollInterval = config.get<number>("pollIntervalMs") || 3000;
 
   // Initialize components
@@ -136,6 +184,15 @@ export function activate(context: vscode.ExtensionContext): void {
       if (["md", "txt", "prompt", "llm"].includes(ext)) {
         triggerScore(doc.getText().slice(0, 2000), dbPath);
       }
+    })
+  );
+
+  // Any save at all counts as "real work happening this session" for the
+  // not-consulted banner — deliberately broader than the score-triggering
+  // extension filter above, since editing code (not just prompts) counts.
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(() => {
+      loopMonitorProvider.markEditActivity();
     })
   );
 

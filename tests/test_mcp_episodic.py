@@ -54,12 +54,15 @@ def mcp_env(tmp_path, monkeypatch):
     monkeypatch.setenv("LOOPLLM_PROVIDER", "mock")
     for g in (
         "_store", "_priors", "_provider", "_episodic", "_agent_loop",
-        "_status_path", "_history_path",
+        "_dag_scheduler", "_status_path", "_history_path", "_consultation_path",
     ):
         if hasattr(m, g):
             setattr(m, g, None)
     yield m
-    for g in ("_store", "_priors", "_provider", "_episodic", "_agent_loop"):
+    for g in (
+        "_store", "_priors", "_provider", "_episodic", "_agent_loop",
+        "_dag_scheduler",
+    ):
         if hasattr(m, g):
             setattr(m, g, None)
 
@@ -206,12 +209,110 @@ def test_tool_loop_step_cdv_path(mcp_env) -> None:
     assert start2["similar_episodes"][0].get("task_type") == "bugfix"  # Bug 4 fix
 
 
+def test_tool_dag_compile_ready_submit_status_merge(mcp_env) -> None:
+    """End-to-end: dag_compile → dag_ready → dag_submit (CDV) → dag_status → dag_merge."""
+    import asyncio
+
+    env = mcp_env
+
+    compiled = json.loads(env._tool_dag_compile(
+        "refactor download module and pass tests",
+        nodes=[
+            {
+                "id": "n1",
+                "role": "implementer",
+                "description": "Refactor the download module",
+                "dependencies": [],
+                "quality_criteria": ["retry logic"],
+                "required_patterns": ["retry"],
+            },
+            {
+                "id": "n2",
+                "role": "test_runner",
+                "description": "Run pytest against the refactor",
+                "dependencies": ["n1"],
+                "required_patterns": ["passed"],
+            },
+        ],
+        task_type="bugfix",
+    ))
+    run_id = compiled["run_id"]
+    assert compiled["nodes"]["n1"]["state"] == "ready"
+    assert compiled["nodes"]["n2"]["state"] == "pending"
+    assert compiled["similar_episodes"] == []  # cold start
+
+    ready1 = json.loads(env._tool_dag_ready(run_id))
+    assert [n["node_id"] for n in ready1["frontier"]] == ["n1"]
+
+    # ctx=None → submit_async degrades to Channel-A-only scoring (same as the
+    # loop_step path when the MCP client doesn't support sampling).
+    submit1 = json.loads(asyncio.run(env._tool_dag_submit(
+        run_id, "n1",
+        "# retry logic: exponential backoff\ndef download(url): ...",
+        None,
+    )))
+    assert submit1["accepted"] is True
+    assert submit1["node_state"] == "verified"
+    assert submit1["dag_complete"] is False
+    assert [n["node_id"] for n in submit1["ready_next"]] == ["n2"]
+
+    submit2 = json.loads(asyncio.run(env._tool_dag_submit(
+        run_id, "n2", "pytest: 12 passed, 0 failed", None,
+    )))
+    assert submit2["accepted"] is True
+    assert submit2["dag_complete"] is True
+
+    status = json.loads(env._tool_dag_status(run_id))
+    assert status["nodes"]["n1"]["state"] == "verified"
+    assert status["nodes"]["n2"]["state"] == "verified"
+    assert status["ready"] == []
+
+    merged = json.loads(env._tool_dag_merge(run_id))
+    assert "n1" in merged["merged_output"]
+    assert "n2" in merged["merged_output"]
+
+    # merge() records a "dag" episode and clears the active run.
+    episodes = env._get_episodic().recall("refactor download module", task_type="bugfix")
+    assert episodes, "DAG episode not recorded after merge"
+    runs = env._get_episodic().list_active_runs(run_type="dag")
+    assert not any(r["run_id"] == run_id for r in runs), "active DAG run not cleared"
+
+
+def test_consultation_signal_written_by_entry_point_tools(mcp_env) -> None:
+    """The 'was PromptLoop consulted' file updates on real entry points, not passive reads."""
+    env = mcp_env
+    env._init_state()
+    consultation_path = env._consultation_path
+    assert consultation_path is not None
+    assert not consultation_path.exists()
+
+    env._tool_intercept("add retry logic to download()")
+    assert consultation_path.exists()
+    first = json.loads(consultation_path.read_text())
+    assert first["last_tool"] == "intercept"
+    assert first["last_consulted_at"] > 0
+
+    env._tool_loop_start("fix flaky auth tests", task_type="bugfix")
+    second = json.loads(consultation_path.read_text())
+    assert second["last_tool"] == "loop_start"
+    assert second["last_consulted_at"] >= first["last_consulted_at"]
+
+    # A passive read (run_status) must NOT count as consultation.
+    consultation_path.unlink()
+    env._tool_run_status()
+    assert not consultation_path.exists(), "run_status should not count as consultation"
+
+
 def test_server_registers_expected_tool_count(mcp_env) -> None:
-    """31 MCP tools are registered (keeps the README banner honest)."""
+    """36 MCP tools are registered (keeps the README banner honest)."""
     import asyncio
 
     server = mcp_env.create_mcp_server()
     tools = asyncio.run(server.list_tools())
     names = {t.name for t in tools}
-    assert len(names) == 31
+    assert len(names) == 36
     assert {"loopllm_recall", "loopllm_run_status", "loopllm_loop_resume"} <= names
+    assert {
+        "loopllm_dag_compile", "loopllm_dag_ready", "loopllm_dag_submit",
+        "loopllm_dag_status", "loopllm_dag_merge",
+    } <= names
