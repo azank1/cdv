@@ -7,6 +7,7 @@ trajectories.
 """
 from __future__ import annotations
 
+import hashlib
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -27,6 +28,25 @@ from loopllm.priors import AdaptivePriors, CallObservation
 logger = structlog.get_logger(__name__)
 
 MAX_STEPS = MAX_STEPS_DEFAULT
+
+# Head/tail characters retained when compacting an intermediate step artifact
+# in a recovery snapshot. Only the final step output is ever read back (via
+# ``step_outputs[-1]``); earlier ones exist solely for the crash-recovery
+# snapshot, so truncating them caps ``active_runs`` growth on long loops with
+# large artifacts without losing anything a resume or ``loop_end`` consumes.
+_STEP_OUTPUT_KEEP = 500
+
+
+def _compact_step_output(text: str) -> str:
+    """Truncate a long intermediate step artifact to a head+tail stub."""
+    if len(text) <= 2 * _STEP_OUTPUT_KEEP + 80:
+        return text
+    sha = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return (
+        f"{text[:_STEP_OUTPUT_KEEP]}\n"
+        f"…[compacted {len(text)} chars, sha256:{sha}]…\n"
+        f"{text[-_STEP_OUTPUT_KEEP:]}"
+    )
 
 
 @dataclass
@@ -75,8 +95,19 @@ class AgentLoopSession:
     )
 
     def to_snapshot(self) -> dict[str, Any]:
-        """Serialise this session for the ``active_runs`` recovery store."""
-        return {name: getattr(self, name) for name in self._SNAPSHOT_FIELDS}
+        """Serialise this session for the ``active_runs`` recovery store.
+
+        Intermediate ``step_outputs`` are compacted to head+tail stubs; the
+        final one is kept whole (it's the only entry ever read back). This
+        bounds snapshot size on long loops without changing recovery behaviour.
+        """
+        snapshot = {name: getattr(self, name) for name in self._SNAPSHOT_FIELDS}
+        outputs = snapshot.get("step_outputs") or []
+        if len(outputs) > 1:
+            snapshot["step_outputs"] = [
+                _compact_step_output(o) for o in outputs[:-1]
+            ] + [outputs[-1]]
+        return snapshot
 
     @classmethod
     def from_snapshot(cls, state: dict[str, Any]) -> AgentLoopSession:

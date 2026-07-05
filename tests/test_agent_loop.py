@@ -150,3 +150,60 @@ def test_status_reports_trajectory() -> None:
     assert status["steps_used"] == 2
     assert status["score_trajectory"] == [0.3, 0.5]
     assert status["last_decision"] in {"continue", "stop"}
+
+
+def test_snapshot_compacts_intermediate_step_outputs() -> None:
+    """Large intermediate artifacts are stubbed in the snapshot; the last is kept whole."""
+    from loopllm.agent_loop import _STEP_OUTPUT_KEEP
+
+    controller = AgentLoopController(AdaptivePriors())
+    session = controller.start("build", task_type="general", model_id="m")
+    big_a = "A" * 5000
+    big_b = "B" * 5000
+    final = "def done(): return 42"  # short final artifact
+    controller.step(session.session_id, 0.3, step_output=big_a)
+    controller.step(session.session_id, 0.5, step_output=big_b)
+    controller.step(session.session_id, 0.9, step_output=final)
+
+    snap = controller.get_session(session.session_id).to_snapshot()
+    outs = snap["step_outputs"]
+    assert len(outs) == 3
+    # Intermediates compacted (much smaller than original, carry a sha marker).
+    assert len(outs[0]) < len(big_a) and "compacted" in outs[0]
+    assert len(outs[1]) < len(big_b) and "compacted" in outs[1]
+    # Final artifact preserved verbatim — it's the only one read back.
+    assert outs[-1] == final
+    # In-memory session is untouched (only the snapshot compacts).
+    assert controller.get_session(session.session_id).step_outputs[0] == big_a
+    # Each stub keeps a head+tail window bounded by the retention constant.
+    assert len(outs[0]) < 2 * _STEP_OUTPUT_KEEP + 200
+
+
+def test_snapshot_restore_preserves_scores_and_final_artifact() -> None:
+    """A compacted snapshot round-trips: scores intact, final artifact recallable."""
+    priors = AdaptivePriors()
+    c1 = AgentLoopController(priors)
+    s = c1.start("fix bug", task_type="bugfix", model_id="m", quality_threshold=0.9)
+    c1.step(s.session_id, 0.4, step_output="X" * 4000)
+    final = "pytest: 12 passed, 0 failed"
+    c1.step(s.session_id, 0.6, step_output=final)
+    snap = c1.get_session(s.session_id).to_snapshot()
+
+    c2 = AgentLoopController(priors)
+    sid = c2.restore_from_snapshot(snap)
+    restored = c2.get_session(sid)
+    assert restored.scores == [0.4, 0.6]
+    assert restored.step_outputs[-1] == final  # final artifact survives round-trip
+    # Loop keeps advancing after restore.
+    verdict = c2.step(sid, 0.95, step_output="done")
+    assert verdict["steps_used"] == 3
+
+
+def test_snapshot_keeps_short_outputs_verbatim() -> None:
+    """Small step outputs are not compacted (no marker overhead)."""
+    controller = AgentLoopController(AdaptivePriors())
+    session = controller.start("g", task_type="general", model_id="m")
+    controller.step(session.session_id, 0.3, step_output="short one")
+    controller.step(session.session_id, 0.5, step_output="short two")
+    outs = controller.get_session(session.session_id).to_snapshot()["step_outputs"]
+    assert outs == ["short one", "short two"]
