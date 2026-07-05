@@ -564,10 +564,11 @@ print(result.output, result.best_score, result.converged)
 See **Develop from source** above for clone and setup. Then:
 
 ```bash
-python -m pytest tests/ -q          # ~248 tests, ~2s
+python -m pytest tests/ -q          # ~288 tests, ~3s
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming (`az/<type>/<short>`) and checks.
+Maintainers cutting a release should follow [RELEASING.md](RELEASING.md).
 
 **Key files:**
 - `src/loopllm/mcp_server.py` — 36 MCP tools + MCP Sampling helpers
