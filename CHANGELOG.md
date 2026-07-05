@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-07-05
+
 ### Added
 - **CI verification gate**: `loopllm audit --export <path>` writes the audit
   trail as a portable JSON artifact (default `.loopllm/audit.json`) so it can

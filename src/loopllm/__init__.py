@@ -29,7 +29,7 @@ from loopllm.step_scorer import DualVerifyScore, conservative_dual_verify
 from loopllm.store import LoopStore, SQLiteBackedPriors
 from loopllm.tasks import Task, TaskOrchestrator, TaskPlan, TaskState
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     # Engine
