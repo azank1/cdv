@@ -10,9 +10,9 @@ author: "loopllm"
 inputs:
   since:
     description: >
-      Git ref the commit range is scoped against (e.g. origin/main, or
-      `origin/${{ github.event.pull_request.base.ref }}` in a pull_request
-      workflow). Required.
+      Git ref the commit range is scoped against (e.g. origin/main, or the
+      PR's base ref prefixed with origin/ in a pull_request workflow).
+      Required.
     required: true
   artifact:
     description: "Path to the committed audit artifact"
