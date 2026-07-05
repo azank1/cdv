@@ -94,17 +94,27 @@ def current_commit_sha(cwd: Path | None = None) -> str | None:
     return _run_git(["rev-parse", "HEAD"], (cwd or Path.cwd()).resolve())
 
 
-def commits_since(ref: str, cwd: Path | None = None) -> set[str] | None:
+def commits_since(
+    ref: str, cwd: Path | None = None, *, no_merges: bool = False
+) -> set[str] | None:
     """Return the set of commit shas reachable from HEAD but not from *ref*.
 
     Returns None (meaning "don't filter, git/ref unavailable") only on an
     actual git failure — an empty-but-successful range (e.g. ``ref == HEAD``)
     correctly returns an empty set rather than being treated as a failure.
+
+    ``no_merges=True`` excludes merge commits — used by ``loopllm audit-gate``,
+    since a merge commit isn't itself something an agent "wrote" and verified;
+    it's the individual commits merged in that carry (or lack) a verification
+    record.
     """
     root = (cwd or Path.cwd()).resolve()
+    args = ["log", "--format=%H", f"{ref}..HEAD"]
+    if no_merges:
+        args.insert(1, "--no-merges")
     try:
         result = subprocess.run(
-            ["git", "log", "--format=%H", f"{ref}..HEAD"],
+            ["git", *args],
             cwd=root,
             capture_output=True,
             text=True,

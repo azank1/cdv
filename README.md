@@ -59,6 +59,17 @@ report of what the agent did and how it was CDV-verified on the current branch
 — the reviewable record a tech lead can point to. The VS Code Loop Monitor has
 an **Export audit** button that opens the same report as a markdown document.
 
+**CI gate.** `loopllm audit --export .loopllm/audit.json` writes that trail as
+a portable artifact you commit alongside the code it verifies — a CI runner
+has no local `~/.loopllm/` state to read otherwise. `loopllm audit-gate
+--since origin/main [--min-score X] [--require-verified]` reads it back and
+checks every commit in the PR; without the enforcement flags it only reports,
+so a team can dogfood before turning it on. See
+[`.github/workflows/loopllm-gate.yml`](.github/workflows/loopllm-gate.yml) for
+this repo's own (report-only) setup, or drop the reusable
+[`.github/actions/loopllm-gate`](.github/actions/loopllm-gate/action.yml)
+composite action into another repo's workflow.
+
 **Non-consultation signal.** MCP is advisory — nothing can force an IDE agent
 to call loopllm. So the VS Code Loop Monitor shows an undismissable banner,
 *"PromptLoop has not been consulted this session,"* whenever you've been

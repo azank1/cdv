@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -15,6 +16,7 @@ from loopllm.evaluators import LengthEvaluator
 from loopllm.priors import CallObservation
 from loopllm.project_scope import (
     commits_since,
+    current_commit_sha,
     legacy_store_path,
     resolve_db_path,
     resolve_project_id,
@@ -433,6 +435,13 @@ def cmd_audit(args: argparse.Namespace) -> None:
     scopes the report to episodes recorded on commits reachable from HEAD but
     not from *ref* (i.e. ``git log <ref>..HEAD``) — e.g. ``--since origin/main``
     to audit everything on the current branch.
+
+    ``--export <path>`` additionally writes the (filtered) episodes as a
+    portable JSON artifact, keyed by ``commit_sha``. The local per-project
+    SQLite store this reads from lives under ``~/.loopllm/`` and does not
+    exist on a CI runner; committing this artifact alongside the code it
+    verifies is what lets ``loopllm audit-gate`` check a PR in CI without
+    that local state.
     """
     store = _get_store(args.db)
     episodes = store.list_episodes(limit=args.limit)
@@ -447,6 +456,19 @@ def cmd_audit(args: argparse.Namespace) -> None:
             )
         else:
             episodes = [e for e in episodes if e.get("commit_sha") in commit_set]
+
+    if args.export:
+        export_path = Path(args.export)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact = {
+            "version": 1,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "head": current_commit_sha(),
+            "since": args.since,
+            "episodes": episodes,
+        }
+        export_path.write_text(json.dumps(artifact, indent=2, default=str) + "\n")
+        print(f"Exported {len(episodes)} episode(s) to {export_path}")
 
     if args.json:
         print(json.dumps(episodes, indent=2, default=str))
@@ -478,6 +500,85 @@ def cmd_audit(args: argparse.Namespace) -> None:
             print(f"          {meta}")
 
     store.close()
+
+
+def cmd_audit_gate(args: argparse.Namespace) -> None:
+    """CI gate: check that code-touching commits in a range carry a verification record.
+
+    Reads a *committed* audit artifact (default ``.loopllm/audit.json``,
+    produced by ``loopllm audit --export``) instead of the local per-project
+    SQLite store — a CI runner has no ``~/.loopllm/`` state, so the artifact
+    is the only portable record of what happened locally. Scopes to non-merge
+    commits reachable from HEAD but not from ``--since`` (a merge commit
+    isn't itself something an agent wrote and verified).
+
+    Without ``--require-verified`` or ``--min-score`` this only reports and
+    always exits 0 — a team can dogfood the report before turning on
+    enforcement. ``--require-verified`` fails commits with no matching
+    record; ``--min-score`` fails commits whose record scores below the
+    threshold (also failing commits with no record, since there's nothing to
+    compare).
+    """
+    commit_set = commits_since(args.since, no_merges=True)
+    if commit_set is None:
+        print(
+            f"Warning: could not resolve commit range for '{args.since}' "
+            "(not a git repo, or ref doesn't exist) — nothing to gate.",
+            file=sys.stderr,
+        )
+        return
+
+    if not commit_set:
+        print(f"No commits since {args.since} — nothing to gate.")
+        return
+
+    artifact_path = Path(args.artifact)
+    records_by_commit: dict[str, dict[str, Any]] = {}
+    if artifact_path.exists():
+        try:
+            artifact = json.loads(artifact_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"Warning: could not parse audit artifact {artifact_path}: {exc}", file=sys.stderr)
+            artifact = {"episodes": []}
+        for ep in artifact.get("episodes", []):
+            sha = ep.get("commit_sha")
+            if not sha:
+                continue
+            existing = records_by_commit.get(sha)
+            if existing is None or (ep.get("score_final") or 0) > (existing.get("score_final") or 0):
+                records_by_commit[sha] = ep
+    else:
+        print(
+            f"Warning: no audit artifact at {artifact_path} — treating all "
+            f"commits as unverified. Run `loopllm audit --export {artifact_path}`.",
+            file=sys.stderr,
+        )
+
+    failures: list[str] = []
+    print(f"=== Verification Gate (since {args.since}) ===")
+    for sha in sorted(commit_set):
+        short = sha[:7]
+        record = records_by_commit.get(sha)
+        if record is None:
+            print(f"[{short}] NOT VERIFIED")
+            if args.require_verified or args.min_score is not None:
+                failures.append(f"{short}: no verification record")
+            continue
+
+        score = record.get("score_final")
+        score_str = f"{score:.2f}" if score is not None else "—"
+        print(f"[{short}] verified  score={score_str}  {record.get('goal', '')[:60]}")
+        if args.min_score is not None and (score is None or score < args.min_score):
+            failures.append(f"{short}: score {score_str} below --min-score {args.min_score}")
+
+    print()
+    if failures:
+        print(f"FAIL: {len(failures)}/{len(commit_set)} commit(s) failed the verification gate:")
+        for f in failures:
+            print(f"  - {f}")
+        sys.exit(1)
+
+    print(f"PASS: {len(commit_set)} commit(s) checked.")
 
 
 def cmd_migrate_legacy(args: argparse.Namespace) -> None:
@@ -690,7 +791,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_audit.add_argument("--limit", type=int, default=200, help="Max episodes to scan")
     p_audit.add_argument("--json", action="store_true", help="Output JSON instead of a report")
+    p_audit.add_argument(
+        "--export", default=None, metavar="PATH",
+        help="Also write the (filtered) episodes as a portable JSON artifact at PATH "
+             "(e.g. .loopllm/audit.json), for `loopllm audit-gate` to read in CI",
+    )
     p_audit.set_defaults(func=cmd_audit)
+
+    # --- audit-gate ---
+    p_gate = subparsers.add_parser(
+        "audit-gate",
+        help="CI gate: fail when code-touching commits in a range lack a verification record",
+    )
+    p_gate.add_argument(
+        "--since", required=True,
+        help="Git ref (e.g. origin/main) the commit range is scoped against: "
+             "non-merge commits reachable from HEAD but not from this ref",
+    )
+    p_gate.add_argument(
+        "--artifact", default=".loopllm/audit.json", metavar="PATH",
+        help="Committed audit artifact written by `loopllm audit --export` (default: .loopllm/audit.json)",
+    )
+    p_gate.add_argument(
+        "--min-score", type=float, default=None, metavar="X",
+        help="Fail commits whose verification score is below X (also fails commits with no record)",
+    )
+    p_gate.add_argument(
+        "--require-verified", action="store_true",
+        help="Fail commits that have no verification record at all",
+    )
+    p_gate.set_defaults(func=cmd_audit_gate)
 
     # --- migrate-legacy ---
     p_migrate = subparsers.add_parser(
