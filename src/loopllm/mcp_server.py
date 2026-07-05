@@ -1696,10 +1696,21 @@ def _tool_recall(
     query: str,
     task_type: str | None = None,
     k: int = 5,
+    scope: str = "project",
 ) -> str:
-    """Recall similar past episodes by keyword search."""
-    episodes = _get_episodic().recall(query, task_type=task_type, k=k)
-    return json.dumps({"query": query, "count": len(episodes), "episodes": episodes}, indent=2)
+    """Recall similar past episodes. ``scope="global"`` fans out across all projects."""
+    if scope == "global":
+        from loopllm.episodes import global_recall
+
+        db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
+        base = db_path.parent.parent.parent  # <base>/projects/<id>/store.db -> <base>
+        episodes = global_recall(query, task_type=task_type, k=k, base=base)
+    else:
+        episodes = _get_episodic().recall(query, task_type=task_type, k=k)
+    return json.dumps(
+        {"query": query, "scope": scope, "count": len(episodes), "episodes": episodes},
+        indent=2,
+    )
 
 
 def _tool_run_status() -> str:
@@ -2927,16 +2938,19 @@ def create_mcp_server() -> Any:
     @mcp.tool(
         name="loopllm_recall",
         description=(
-            "Recall similar past episodes (completed loops/plans) by keyword "
-            "search over goal, summary, and tags in ~/.loopllm/store.db."
+            "Recall similar past episodes (completed loops/plans) ranked by "
+            "relevance over goal, summary, and tags. Defaults to this project's "
+            "store; pass scope='global' to search across every project on this "
+            "machine (each hit tagged with its project_id)."
         ),
     )
     def recall(
         query: str,
         task_type: str | None = None,
         k: int = 5,
+        scope: str = "project",
     ) -> str:
-        return _tool_recall(query, task_type, k)
+        return _tool_recall(query, task_type, k, scope)
 
     @mcp.tool(
         name="loopllm_run_status",

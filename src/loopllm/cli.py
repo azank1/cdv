@@ -502,6 +502,43 @@ def cmd_audit(args: argparse.Namespace) -> None:
     store.close()
 
 
+def cmd_recall(args: argparse.Namespace) -> None:
+    """Recall past episodes relevant to a query — this project, or all projects.
+
+    Defaults to the current project's store. ``--global`` fans out across every
+    project under ``~/.loopllm/projects/`` and tags each hit with its project id
+    — the human-facing view of the same cross-project recall the MCP
+    ``loopllm_recall(scope="global")`` tool exposes to the agent.
+    """
+    from loopllm.episodes import EpisodicStore, global_recall
+
+    if args.all_projects:
+        base = resolve_db_path(args.db).parent.parent.parent
+        episodes = global_recall(
+            args.query, task_type=args.task_type, k=args.k, base=base
+        )
+    else:
+        store = _get_store(args.db)
+        episodes = EpisodicStore(store).recall(
+            args.query, task_type=args.task_type, k=args.k
+        )
+        store.close()
+
+    if args.json:
+        print(json.dumps(episodes, indent=2, default=str))
+        return
+
+    if not episodes:
+        print("No matching episodes.")
+        return
+
+    for ep in episodes:
+        score = ep.get("score_final")
+        score_str = f"{score:.2f}" if score is not None else "—"
+        proj = f"[{ep['project_id']}] " if ep.get("project_id") else ""
+        print(f"{proj}score={score_str}  {ep['episode_type']:10s} {ep['goal'][:70]}")
+
+
 def cmd_audit_gate(args: argparse.Namespace) -> None:
     """CI gate: check that code-touching commits in a range carry a verification record.
 
@@ -797,6 +834,21 @@ def build_parser() -> argparse.ArgumentParser:
              "(e.g. .loopllm/audit.json), for `loopllm audit-gate` to read in CI",
     )
     p_audit.set_defaults(func=cmd_audit)
+
+    # --- recall ---
+    p_recall = subparsers.add_parser(
+        "recall",
+        help="Recall past episodes relevant to a query (this project, or --global)",
+    )
+    p_recall.add_argument("query", help="What to recall (matched over goal/summary/tags)")
+    p_recall.add_argument(
+        "--global", dest="all_projects", action="store_true",
+        help="Search across every project under ~/.loopllm/projects/, tagged by project",
+    )
+    p_recall.add_argument("--task-type", default=None, help="Filter by task_type")
+    p_recall.add_argument("-k", type=int, default=5, help="Max results (default: 5)")
+    p_recall.add_argument("--json", action="store_true", help="Output JSON")
+    p_recall.set_defaults(func=cmd_recall)
 
     # --- audit-gate ---
     p_gate = subparsers.add_parser(

@@ -194,3 +194,36 @@ class EpisodicStore:
 def tokenize_for_recall(text: str) -> list[str]:
     """Split text into recall terms (stopword-filtered, deduped)."""
     return _recall_terms(text)
+
+
+def global_recall(
+    query: str,
+    *,
+    task_type: str | None = None,
+    k: int = 5,
+    base: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Recall across *every* project's store under ``<base>/projects/``.
+
+    Per-project scoping (v0.10) keeps each repo's episodes isolated. This
+    read-only fan-out restores cross-project institutional memory as an
+    explicit opt-in: it queries each project's store, tags every hit with its
+    ``project_id``, and returns the ``k`` most recent matches overall (recency
+    is the only ordering comparable across independent FTS indexes).
+    """
+    from loopllm.project_scope import list_project_dirs
+
+    hits: list[dict[str, Any]] = []
+    for proj_dir in list_project_dirs(base):
+        db = proj_dir / "store.db"
+        if not db.exists():
+            continue
+        store = LoopStore(db_path=db)
+        try:
+            for ep in EpisodicStore(store).recall(query, task_type=task_type, k=k):
+                ep["project_id"] = proj_dir.name
+                hits.append(ep)
+        finally:
+            store.close()
+    hits.sort(key=lambda e: e.get("recorded_at") or "", reverse=True)
+    return hits[:k]

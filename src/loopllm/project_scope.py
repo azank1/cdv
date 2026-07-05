@@ -84,6 +84,18 @@ def project_state_dir(base: Path | None = None, cwd: Path | None = None) -> Path
     return base / "projects" / resolve_project_id(cwd)
 
 
+def list_project_dirs(base: Path | None = None) -> list[Path]:
+    """Return every per-project state directory under ``<base>/projects/``.
+
+    Used by opt-in cross-project recall to fan out over all of a machine's
+    projects. Returns an empty list when no projects directory exists.
+    """
+    projects = (base or (Path.home() / ".loopllm")) / "projects"
+    if not projects.is_dir():
+        return []
+    return sorted(p for p in projects.iterdir() if p.is_dir())
+
+
 def current_commit_sha(cwd: Path | None = None) -> str | None:
     """Return the current ``HEAD`` commit sha, or None outside a git repo.
 
