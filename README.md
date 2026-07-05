@@ -21,7 +21,7 @@ training, nothing leaves your machine.
 renders live. A goal becomes nodes; each node is scored independently before
 its dependents unlock; a failed node shows why in plain language.*
 
-> Current release: **v0.11.0** — episodic memory (v0.8), DAG virtual sub-agents (v0.9), per-project scoping + verification audit trail (v0.10), and the CI verification gate (v0.11). See [CHANGELOG.md](CHANGELOG.md).
+> Current release: **v0.12.0** — episodic memory (v0.8), DAG virtual sub-agents (v0.9), per-project scoping + verification audit trail (v0.10), CI verification gate (v0.11), and FTS5 semantic recall + cross-project memory (v0.12). See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -43,14 +43,17 @@ PromptLoop uses two complementary memory layers in this per-project store:
 | Layer | What it learns | MCP tools |
 |---|---|---|
 | **Meta-memory** (v0.6+) | Optimal loop depth, convergence rate, scoring weights | `loopllm_loop_end`, `loopllm_feedback` |
-| **Episodic memory** (v0.8+) | Summaries of past loops/plans — keyword recall | `loopllm_recall`, `loopllm_run_status`, `loopllm_loop_resume` |
+| **Episodic memory** (v0.8+) | Summaries of past loops/plans — FTS5 relevance recall | `loopllm_recall`, `loopllm_run_status`, `loopllm_loop_resume` |
 
 Episodic memory is **not** full chat RAG — it stores compressed outcomes so the next
 loop of the same task type can recall *what worked before*. Recall is also injected
 automatically: `loopllm_loop_start` returns `similar_episodes`, and
-`loopllm_intercept` flags `recall_available` on clear prompts. (Ranking is
-deterministic keyword overlap today; the seam is stable for an FTS5/vector upgrade
-in v0.12.)
+`loopllm_intercept` flags `recall_available` on clear prompts. Ranking is SQLite
+FTS5 (BM25 over goal/summary/tags) blended with tag/task_type boosts and recency,
+falling back to deterministic keyword overlap when a SQLite build lacks FTS5.
+Recall is per-project by default; pass `scope="global"` to `loopllm_recall`
+(or `loopllm recall <query> --global`) to search across every project on the
+machine, each hit tagged with its project id.
 
 **Verification audit trail.** Every recorded episode (agent-loop, DAG node, or
 DAG merge) is stamped with the git commit that was `HEAD` at the time. Run

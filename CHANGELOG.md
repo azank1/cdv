@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-07-05
+
+### Added
+- **FTS5 semantic recall** (schema v7): episodic recall now ranks by SQLite
+  FTS5 BM25 over goal/summary/tags when the SQLite build supports it, blended
+  with the existing tag/task_type boosts and recency tie-break. Falls back to
+  the deterministic keyword scorer when FTS5 is unavailable — no new dependency,
+  callers unchanged (the `store.search_episodes` signature is stable). The
+  `episodes_fts` index is built and self-healed by `LoopStore._ensure_fts5`,
+  covering the v6→v7 upgrade of stores with pre-existing episodes.
+- **Opt-in cross-project recall**: `loopllm_recall(scope="global")` (MCP) and
+  `loopllm recall <query> --global` (CLI) fan out over every project under
+  `~/.loopllm/projects/`, tagging each hit with its `project_id`. Per-project
+  isolation remains the default; this restores cross-repo institutional memory
+  as an explicit choice.
+
+### Changed
+- **Recovery-snapshot compaction**: `AgentLoopSession.to_snapshot()` compacts
+  intermediate `step_outputs` to head+tail stubs (keeping the final artifact
+  whole — the only one read back), bounding `active_runs` growth on long loops
+  with large artifacts. Recovery behaviour is unchanged.
+
 ## [0.11.0] — 2026-07-05
 
 ### Added

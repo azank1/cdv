@@ -9,7 +9,7 @@ the branch/commit conventions, and the checks your change must pass.
 git clone https://github.com/azank1/loop-llm
 cd loop-llm
 pip install -e ".[dev]"
-python -m pytest tests/ -q          # 298 tests (294 pass, 4 integration skipped)
+python -m pytest tests/ -q          # 312 tests (308 pass, 4 integration skipped)
 ```
 
 ## Branch naming convention
