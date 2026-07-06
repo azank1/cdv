@@ -35,6 +35,7 @@ from loopllm.project_scope import legacy_store_path, resolve_db_path
 from loopllm.provider import LLMProvider
 from loopllm.dag_scheduler import DagScheduler
 from loopllm.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
+from loopllm.logging_config import configure_logging
 from loopllm.plan_registry import get_registry
 from loopllm.providers.agent import AgentPassthroughProvider
 from loopllm.store import LoopStore, SQLiteBackedPriors
@@ -3160,6 +3161,7 @@ def create_mcp_server() -> Any:
 
 def main() -> None:
     """Start the MCP server (stdio transport)."""
+    configure_logging()
     mcp = create_mcp_server()
     mcp.run(transport="stdio")
 

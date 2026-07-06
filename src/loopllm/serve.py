@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from loopllm.logging_config import configure_logging
 from loopllm.mcp_server import (
     _init_state,
     _score_prompt_quality,
@@ -276,6 +277,7 @@ def run_server(host: str = "127.0.0.1", port: int = 8765, reload: bool = False) 
         port: Port to listen on.
         reload: Enable auto-reload (development only).
     """
+    configure_logging()
     try:
         import uvicorn
     except ImportError as exc:

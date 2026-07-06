@@ -13,6 +13,7 @@ from typing import Any, Callable
 from loopllm.elicitation import ClarifyingQuestion, IntentRefiner
 from loopllm.engine import LoopConfig, LoopedLLM
 from loopllm.evaluators import LengthEvaluator
+from loopllm.logging_config import configure_logging
 from loopllm.priors import CallObservation
 from loopllm.project_scope import (
     commits_since,
@@ -938,6 +939,7 @@ def cmd_mcp_server(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Entry point for the ``loopllm`` CLI."""
+    configure_logging()
     parser = build_parser()
     args = parser.parse_args()
 

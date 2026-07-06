@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- structlog was never configured, so it defaulted to an unfiltered
+  `PrintLoggerFactory` writing to **stdout** — corrupting the MCP server's
+  stdio JSON-RPC stream and any CLI `--json` output the moment a debug log
+  (e.g. `store_schema_created` on first-ever store creation) fired. New
+  [`logging_config.configure_logging()`](src/loopllm/logging_config.py)
+  routes all structlog output to stderr with level filtering
+  (`LOOPLLM_LOG_LEVEL`, default `WARNING`), called from the `loopllm` CLI,
+  the MCP server, and `loopllm serve` entry points.
+
 ### Added
 - **CI verification gate**: `loopllm audit --export <path>` writes the audit
   trail as a portable JSON artifact (default `.loopllm/audit.json`) so it can
