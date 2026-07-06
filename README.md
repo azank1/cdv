@@ -112,29 +112,39 @@ training data, no PyTorch.
 
 ---
 
+## Known limitations
+
+- **Session-scoped, single machine.** State lives in a per-project SQLite file
+  under `~/.loopllm/`; there is no cloud-native execution, so a loop can't run
+  while the machine is off or continue across machines. Verification and
+  learning act on one project (one commit range) at a time — this is not a
+  multi-repo or multi-agent-fleet system.
+- **Channel B is not yet a genuinely separate model.** `score_channel_b` calls
+  `ctx.sample()` — the same MCP-sampled model the agent itself is using —
+  differentiated only by an "independent verifier" prompt role, not a distinct
+  model. Some of the value of a second channel comes from a different model
+  not sharing the first model's blind spots; that isn't wired up yet. Channel
+  A's deterministic floor still applies regardless of which model runs
+  Channel B.
+- **Channel B's token cost is untracked.** Every CDV step that runs Channel B
+  is a second LLM call (up to ~3000 input characters of step output plus goal
+  and criteria, up to 500 output tokens) on top of the agent's own step. This
+  overhead isn't currently measured or surfaced in the verdict JSON or
+  `loopllm_report`.
+- **The adaptive-vs-fixed benchmark below is a synthetic simulation**, not a
+  live-LLM evaluation: it exercises the real `AgentLoopController` /
+  `AdaptivePriors` decision policy, but against a hand-crafted
+  diminishing-returns curve, not real CDV (Channel A + B) scored
+  trajectories. The script itself isn't in the current working tree —
+  recoverable via `git show <rev>:benchmarks/adaptive_vs_fixed.py` (e.g.
+  `92aa875` or earlier) — so treat the table as a lower bound on rigor, not a
+  validated production result.
+
+---
+
 ## System at a glance
 
-```mermaid
-flowchart TB
-  Agent["IDE agent (Cursor / Copilot / Claude Code)"]
-  subgraph interfaces [Interfaces]
-    MCP[MCP sidecar]
-    Ext[VS Code board]
-  end
-  subgraph layers [Four layers]
-    L1["Layer 1: Prompt observer intercept + SGD"]
-    L2["Layer 2: Refinement loop LoopedLLM"]
-    L3["Layer 3: CDV agent loops loop_start step end"]
-    L4["Layer 4: DAG scrum-master compile ready submit merge"]
-  end
-  subgraph learn [Learning + audit]
-    Priors["AdaptivePriors + Episodes, per-project SQLite"]
-    Trail["Verification audit trail: commit-linked"]
-  end
-  Agent --> interfaces --> layers
-  layers --> Priors --> Trail
-  Ext -.->|"Export audit"| Trail
-```
+![PromptLoop architecture overview: an IDE agent connects through an MCP sidecar into a four-layer stack, which writes to a per-project SQLite store read by the VS Code Loop Monitor and exported to a CI gate](.github/assets/architecture-overview.svg)
 
 | Layer | Entry point | What it does |
 |---|---|---|
@@ -317,14 +327,20 @@ code --install-extension loopllm-prompt-gauge-0.1.0.vsix
 Most agent loops stop on a fixed `max_iterations` or let the agent self-grade when
 it's "done." Both waste tokens or optimize **reported** progress. v0.7 introduces
 **Conservative Dual-Verify**: agents submit **step artifacts** (test logs, diffs,
-summaries); the MCP server scores them through **two independent channels** and
-feeds the **stricter** score into Bayesian stop/continue logic.
+summaries); the MCP server scores them through **two channels** and feeds the
+**stricter** score into Bayesian stop/continue logic.
 
 ```python
 channel_a = deterministic_evaluator.evaluate(step_output)   # regex, JSON, completeness
-channel_b = critic_sample(step_output, goal, criteria)      # separate verifier call
+channel_b = critic_sample(step_output, goal, criteria)      # critic-role call, same sampled model
 final_score = min(channel_a, channel_b)                   # either channel can veto
 ```
+
+Channel A is a hard, model-independent floor (regex/JSON/completeness — it can't be
+argued with). Channel B today calls the *same* MCP-sampled model as the agent
+itself, just under an "independent verifier" prompt role, not a genuinely separate
+model — see [Known limitations](#known-limitations) below for why that matters and
+what would close the gap.
 
 ```
 loopllm_loop_start(
@@ -388,7 +404,7 @@ while stop.should_continue(state):   # state = {"output": artifact, "tokens": n}
 `AdaptiveStopper` works as a drop-in `should_continue` predicate for a graph-style
 loop, with no LangGraph dependency required.
 
-![Adaptive agent loop demo](.github/assets/agent-loop.svg)
+![PromptLoop verification and learning core: an L3/L4 loop step is scored by step_scorer.py's Channel A + B min fusion, filtered through the GuardStack, then AdaptivePriors decides whether to continue using a BetaPrior for convergence and a NormalPrior with Welford's algorithm for score, delta, and latency](.github/assets/verification-learning-core.svg)
 
 What a terminal run looks like:
 
@@ -414,7 +430,11 @@ Reproducible simulation (seed=7, 300 test tasks, threshold 0.80):
 on 99.7% of tasks.
 
 > Honest caveat: simulation with stated assumptions; measures *decision efficiency
-> given a quality signal*, not absolute model quality.
+> given a quality signal*, not absolute model quality. It exercises the real
+> `AgentLoopController`/`AdaptivePriors` decision policy, but against a
+> hand-crafted score curve, not real Conservative Dual-Verify (Channel A + B)
+> scored trajectories — and the script generating this table isn't in the
+> current working tree (see [Known limitations](#known-limitations)).
 
 ---
 
