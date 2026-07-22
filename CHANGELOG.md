@@ -4,7 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] — 2026-07-23
+
+### Added
+- `loopllm install-mcp --rules` drops project-scoped agent-instruction files
+  into the current directory so the IDE agent actually *consults* loopllm
+  rather than merely having the tools registered: `.cursor/rules/loopllm.mdc`
+  (Cursor, `alwaysApply`), `.github/instructions/loopllm.instructions.md`
+  (VS Code Copilot), or an appended marked section in `CLAUDE.md` (Claude
+  Code). Existing user files are never clobbered — `CLAUDE.md` is only ever
+  appended to, and a marked rules block is never duplicated on re-runs.
 
 ### Fixed
 - structlog was never configured, so it defaulted to an unfiltered
