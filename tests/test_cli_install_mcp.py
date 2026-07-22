@@ -107,3 +107,118 @@ def test_install_mcp_custom_name_and_model(tmp_path: Path, monkeypatch) -> None:
     cursor = json.loads((tmp_path / ".cursor" / "mcp.json").read_text())
     assert "loopllm-dev" in cursor["mcpServers"]
     assert cursor["mcpServers"]["loopllm-dev"]["env"]["LOOPLLM_MODEL"] == "gpt-4o"
+
+
+# --- --rules: project-scoped agent instruction files ---
+
+
+def test_install_mcp_no_rules_by_default(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "cursor"])
+
+    assert not (project / ".cursor" / "rules" / "loopllm.mdc").exists()
+
+
+def test_install_mcp_rules_cursor_writes_mdc(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "cursor", "--rules"])
+
+    rules = (project / ".cursor" / "rules" / "loopllm.mdc").read_text()
+    assert "alwaysApply: true" in rules
+    assert "loopllm-agent-rules" in rules
+    assert "never your own score" in rules
+
+
+def test_install_mcp_rules_vscode_writes_instructions(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "vscode", "--rules"])
+
+    rules = (project / ".github" / "instructions" / "loopllm.instructions.md").read_text()
+    assert 'applyTo: "**"' in rules
+    assert "loopllm-agent-rules" in rules
+
+
+def test_install_mcp_rules_claude_code_creates_then_appends(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "claude-code", "--rules"])
+    claude_md = project / "CLAUDE.md"
+    assert "loopllm-agent-rules" in claude_md.read_text()
+
+    # Existing CLAUDE.md content is preserved, rules appended
+    claude_md.write_text("# My project\n\nDo things my way.\n")
+    # strip the previous rules block to simulate a pre-existing user file
+    _run(["install-mcp", "--ide", "claude-code", "--rules", "--force"])
+    text = claude_md.read_text()
+    assert text.startswith("# My project")
+    assert "loopllm-agent-rules" in text
+
+
+def test_install_mcp_rules_rerun_does_not_duplicate(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "claude-code", "--rules"])
+    _run(["install-mcp", "--ide", "claude-code", "--rules", "--force"])
+    out = capsys.readouterr().out
+    assert "rules already present" in out
+    assert project.joinpath("CLAUDE.md").read_text().count("loopllm-agent-rules") == 1
+
+
+def test_install_mcp_rules_existing_dedicated_file_not_clobbered(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    rules_path = project / ".cursor" / "rules" / "loopllm.mdc"
+    rules_path.parent.mkdir(parents=True)
+    rules_path.write_text("my own custom rules")
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "cursor", "--rules"])
+    err = capsys.readouterr().err
+    assert "use --force" in err
+    assert rules_path.read_text() == "my own custom rules"
+
+    _run(["install-mcp", "--ide", "cursor", "--rules", "--force"])
+    assert "alwaysApply: true" in rules_path.read_text()
+
+
+def test_install_mcp_rules_antigravity_skips_with_note(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "antigravity", "--rules"])
+    out = capsys.readouterr().out
+    assert "no rules-file mechanism" in out
+
+
+def test_install_mcp_rules_written_even_when_config_exists(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    _run(["install-mcp", "--ide", "cursor"])  # config only
+    _run(["install-mcp", "--ide", "cursor", "--rules"])  # config skipped, rules still written
+
+    assert (project / ".cursor" / "rules" / "loopllm.mdc").exists()

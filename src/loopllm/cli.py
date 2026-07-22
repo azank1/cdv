@@ -75,6 +75,62 @@ _IDE_TARGETS: dict[str, _IdeTarget] = {
 # rather than dropped into whatever directory the user happened to run from.
 _ALL_IDES = ["cursor", "vscode", "antigravity"]
 
+# ---------------------------------------------------------------------------
+# `install-mcp --rules` — project-scoped agent instruction files
+#
+# MCP is advisory: registering the server gives the agent the tools, but
+# nothing makes it call them. These rules files close that gap per IDE.
+# The marker lets re-runs detect (and never duplicate) an installed block.
+# ---------------------------------------------------------------------------
+
+_RULES_MARKER = "<!-- loopllm-agent-rules -->"
+
+_RULES_BODY = _RULES_MARKER + """
+# loopllm agent rules
+
+loopllm is an MCP sidecar that scores prompts, verifies agent work, and remembers
+past runs. Follow this contract for non-trivial requests:
+
+1. **Observe first.** Call `loopllm_intercept` with the user's message before acting.
+   Follow its `route` (elicit / refine / decompose). If it reports
+   `recall_available: true`, call `loopllm_recall` before planning.
+
+2. **Recall before planning.** For tasks similar to past work, call
+   `loopllm_recall("<goal>")` to reuse what worked. `loopllm_loop_start` also returns
+   `similar_episodes` automatically — read them.
+
+3. **Verify, don't self-grade.** For iterative work, use
+   `loopllm_loop_start(goal, task_type, required_patterns=[...])`, then after each step
+   call `loopllm_loop_step(session_id, step_output=<artifact>)` — submit the real
+   artifact (test log, diff, summary), **never your own score**. The server runs
+   Conservative Dual-Verify (deterministic checks + an independent critic) and returns
+   the verified score, a continue/stop verdict, and `cdv_mode`
+   (`full` vs `channel_a_only`). Honor the verdict; then `loopllm_loop_end`.
+
+4. **Resume after reload.** If the IDE reloaded, call `loopllm_run_status`. If it shows
+   an active run, call `loopllm_loop_resume` (optionally with `session_id`) **before**
+   starting a new loop, so the in-progress loop continues instead of restarting cold.
+
+5. **Memory is automatic.** `loopllm_loop_end` records the outcome to episodic memory
+   for next time — no extra step needed.
+"""
+
+_RULES_FILES: dict[str, tuple[str, str]] = {
+    "cursor": (
+        ".cursor/rules/loopllm.mdc",
+        "---\n"
+        "description: How to drive the loopllm MCP sidecar (observe, verify, remember, resume)\n"
+        "alwaysApply: true\n"
+        "---\n\n"
+        + _RULES_BODY,
+    ),
+    "vscode": (
+        ".github/instructions/loopllm.instructions.md",
+        '---\napplyTo: "**"\n---\n\n' + _RULES_BODY,
+    ),
+    "claude-code": ("CLAUDE.md", _RULES_BODY),
+}
+
 
 def _mcp_server_entry(vscode_style: bool, provider: str, model: str) -> dict[str, Any]:
     entry: dict[str, Any] = {
@@ -630,6 +686,42 @@ def cmd_migrate_legacy(args: argparse.Namespace) -> None:
     )
 
 
+def _install_rules(ide_name: str, force: bool) -> None:
+    """Write (or append) the loopllm agent-rules file for one IDE into cwd.
+
+    Dedicated rule files (Cursor, VS Code) are written whole; ``CLAUDE.md`` is
+    only ever appended to, never overwritten. Existing loopllm rules are left
+    alone unless ``force`` — and ``CLAUDE.md`` is never clobbered even then.
+    """
+    spec = _RULES_FILES.get(ide_name)
+    if spec is None:
+        print(f"[{ide_name}] no rules-file mechanism for this IDE — skipping rules")
+        return
+    rel_path, content = spec
+    path = Path.cwd() / rel_path
+
+    if path.exists():
+        existing = path.read_text()
+        if _RULES_MARKER in existing:
+            print(f"[{ide_name}] rules already present at {path} — skipping")
+            return
+        if path.name == "CLAUDE.md":
+            path.write_text(existing.rstrip() + "\n\n" + content)
+            print(f"[{ide_name}] appended loopllm rules to {path}")
+            return
+        if not force:
+            print(
+                f"[{ide_name}] {path} exists without loopllm rules — skipping "
+                "(use --force to overwrite)",
+                file=sys.stderr,
+            )
+            return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    print(f"[{ide_name}] wrote {path}")
+
+
 def cmd_install_mcp(args: argparse.Namespace) -> None:
     """Register the loopllm MCP server in one or more IDE configs, one command.
 
@@ -672,6 +764,11 @@ def cmd_install_mcp(args: argparse.Namespace) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(existing, indent=2) + "\n")
         print(f"[{ide_name}] wrote {path}")
+
+    if args.rules:
+        for ide_name in ides:
+            if ide_name in _IDE_TARGETS:
+                _install_rules(ide_name, args.force)
 
     print("\nRestart the IDE (or reload its MCP servers) to pick up the change.")
 
@@ -854,6 +951,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("--model", default="agent", help="LOOPLLM_MODEL env value to set")
     p_install.add_argument(
         "--force", action="store_true", help="Overwrite an existing entry with this name"
+    )
+    p_install.add_argument(
+        "--rules", action="store_true",
+        help="Also drop project-scoped agent-rules files into the current directory "
+             "(Cursor .mdc, VS Code instructions, CLAUDE.md) so the agent actually "
+             "consults loopllm instead of merely having the tools available",
     )
     p_install.set_defaults(func=cmd_install_mcp)
 
