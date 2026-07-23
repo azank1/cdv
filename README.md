@@ -5,7 +5,7 @@
 [![CI](https://github.com/azank1/loop-llm/actions/workflows/ci.yml/badge.svg)](https://github.com/azank1/loop-llm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://img.shields.io/badge/PyPI-loopllm-blue)](https://pypi.org/project/loopllm/)
-[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC?logo=visual-studio-code)](https://github.com/azank1/loop-llm/tree/main/vscode-loopllm)
+[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=loopllm.loopllm-prompt-gauge)
 
 **Your agent said it works. PromptLoop is the receipt.**
 
@@ -233,14 +233,27 @@ Learning curve sparkline, grade distribution, SGD learned weights per dimension.
 </tr>
 </table>
 
-Build and install the extension from source (Marketplace release coming soon):
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=loopllm.loopllm-prompt-gauge):
+
+```bash
+code --install-extension loopllm.loopllm-prompt-gauge
+```
+
+Cursor does not use the Microsoft Marketplace — until the extension is on
+[Open VSX](https://open-vsx.org/), sideload the VSIX (build from source below, or
+grab a release artifact) with `cursor --install-extension <path-to.vsix>`.
+
+<details>
+<summary>Build from source (contributors)</summary>
 
 ```bash
 cd vscode-loopllm
 npm install
-npx @vscode/vsce package          # produces loopllm-prompt-gauge-0.3.0.vsix
-code --install-extension loopllm-prompt-gauge-0.3.0.vsix
+npx @vscode/vsce package --no-dependencies   # loopllm-prompt-gauge-0.3.1.vsix
+code --install-extension loopllm-prompt-gauge-0.3.1.vsix
 ```
+
+</details>
 
 ---
 

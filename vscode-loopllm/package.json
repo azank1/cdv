@@ -1,8 +1,8 @@
 {
   "name": "loopllm-prompt-gauge",
   "displayName": "PromptLoop — Agent Verification Board",
-  "description": "DAG dependency board, Conservative Dual-Verify loop monitor, and real-time prompt quality scoring for AI coding agents, powered by loopllm",
-  "version": "0.3.0",
+  "description": "Your agent said it works. PromptLoop is the receipt — Conservative Dual-Verify loop monitor, git-stamped audit trail, and live prompt scoring for Cursor / Copilot / Claude Code.",
+  "version": "0.3.1",
   "publisher": "loopllm",
   "license": "MIT",
   "repository": {
@@ -22,6 +22,11 @@
     "Machine Learning"
   ],
   "keywords": [
+    "verification",
+    "agent",
+    "audit",
+    "receipt",
+    "cursor",
     "llm",
     "prompt",
     "quality",
