@@ -7,7 +7,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import structlog
 
-from loopllm.provider import LLMProvider
+from cdv.provider import LLMProvider
 
 
 @runtime_checkable

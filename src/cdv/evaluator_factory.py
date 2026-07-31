@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from loopllm.engine import CompositeEvaluator
-from loopllm.evaluators import (
+from cdv.engine import CompositeEvaluator
+from cdv.evaluators import (
     CompletenessEvaluator,
     JSONSchemaEvaluator,
     LengthEvaluator,

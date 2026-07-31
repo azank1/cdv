@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from loopllm.mcp_server import (
+from cdv.mcp_server import (
     _classify_task_type,
     _estimate_complexity,
     _score_prompt_quality,
@@ -14,7 +14,7 @@ from loopllm.mcp_server import (
     _tool_intercept,
     _tool_prompt_stats,
 )
-from loopllm.store import LoopStore
+from cdv.store import LoopStore
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ class TestToolIntercept:
 
     @pytest.fixture(autouse=True)
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        import loopllm.mcp_server as mod
+        import cdv.mcp_server as mod
 
         # Reset shared state
         mod._store = None
@@ -214,9 +214,9 @@ class TestToolIntercept:
         mod._provider = None
         mod._status_path = None
 
-        monkeypatch.setenv("LOOPLLM_DB", str(tmp_path / "test.db"))
-        monkeypatch.setenv("LOOPLLM_PROVIDER", "mock")
-        monkeypatch.setenv("LOOPLLM_MODEL", "test-model")
+        monkeypatch.setenv("CDV_DB", str(tmp_path / "test.db"))
+        monkeypatch.setenv("CDV_PROVIDER", "mock")
+        monkeypatch.setenv("CDV_MODEL", "test-model")
 
     def test_intercept_returns_valid_json(self) -> None:
         result = json.loads(_tool_intercept("fix it"))
@@ -238,7 +238,7 @@ class TestToolIntercept:
         assert result["route"] == "refine"
 
     def test_intercept_logs_to_history(self) -> None:
-        import loopllm.mcp_server as mod
+        import cdv.mcp_server as mod
 
         _tool_intercept("write a test")
         store = mod._get_store()
@@ -264,7 +264,7 @@ class TestToolIntercept:
         assert result["rating"] == 1
 
     def test_intercept_writes_status_file(self, tmp_path: Path) -> None:
-        import loopllm.mcp_server as mod
+        import cdv.mcp_server as mod
 
         _tool_intercept("hello world")
         status_path = mod._status_path

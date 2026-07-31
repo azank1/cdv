@@ -5,8 +5,8 @@ import random
 import tempfile
 from pathlib import Path
 
-from loopllm import AdaptivePriors, CallObservation
-from loopllm.priors import BetaPrior, NormalPrior
+from cdv import AdaptivePriors, CallObservation
+from cdv.priors import BetaPrior, NormalPrior
 
 
 def test_beta_prior_uniform_mean_and_confidence() -> None:

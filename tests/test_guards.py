@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import time
 
-from loopllm import AdaptivePriors, AgentLoopController, AgentLoopSession
-from loopllm.guards import (
+from cdv import AdaptivePriors, AgentLoopController, AgentLoopSession
+from cdv.guards import (
     GuardContext,
     GuardStack,
     MaxStepsGuard,

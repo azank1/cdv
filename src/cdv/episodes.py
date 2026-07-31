@@ -13,8 +13,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from loopllm.project_scope import current_commit_sha
-from loopllm.store import LoopStore, _recall_terms
+from cdv.project_scope import current_commit_sha
+from cdv.store import LoopStore, _recall_terms
 
 _MAX_SUMMARY = 500
 
@@ -106,7 +106,7 @@ class EpisodicStore:
         ``commit_sha`` defaults to the current git HEAD (resolved
         automatically) so every verification outcome is traceable to the
         commit that was checked out when it ran — this is what
-        ``loopllm audit --since <ref>`` reports against. Pass an explicit
+        ``cdv audit --since <ref>`` reports against. Pass an explicit
         value (or ``""``) to opt out.
         """
         merged_tags = list(tags or [])

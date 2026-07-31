@@ -11,8 +11,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from loopllm.engine import EvaluationResult, Evaluator
-from loopllm.evaluator_factory import build_evaluator
+from cdv.engine import EvaluationResult, Evaluator
+from cdv.evaluator_factory import build_evaluator
 
 
 @dataclass

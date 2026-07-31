@@ -8,7 +8,7 @@ import structlog
 
 from typing import Any
 
-from loopllm.provider import LLMProvider, LLMResponse, LLMUsage
+from cdv.provider import LLMProvider, LLMResponse, LLMUsage
 
 logger = structlog.get_logger(__name__)
 
@@ -50,13 +50,13 @@ class OpenRouterProvider(LLMProvider):
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "httpx is required for OpenRouterProvider. "
-                "Install it with: pip install loopllm[openrouter]"
+                "Install it with: pip install cdv[openrouter]"
             ) from exc
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/azank1/loop-llm",
+            "HTTP-Referer": "https://github.com/azank1/cdv",
         }
         payload = {
             "model": model,

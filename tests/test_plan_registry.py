@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from loopllm.plan_registry import (
+from cdv.plan_registry import (
     Plan,
     PlanRegistry,
     TaskRecord,

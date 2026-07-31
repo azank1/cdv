@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loopllm.provider import LLMProvider, LLMResponse
+from cdv.provider import LLMProvider, LLMResponse
 
 
 class AgentExecutionRequired(Exception):
@@ -43,7 +43,7 @@ class AgentPassthroughProvider(LLMProvider):
 
     Usage::
 
-        loopllm mcp-server --provider agent
+        cdv mcp-server --provider agent
     """
 
     @property

@@ -8,7 +8,7 @@ import structlog
 
 from typing import Any
 
-from loopllm.provider import LLMProvider, LLMResponse, LLMUsage
+from cdv.provider import LLMProvider, LLMResponse, LLMUsage
 
 logger = structlog.get_logger(__name__)
 
@@ -48,7 +48,7 @@ class OllamaProvider(LLMProvider):
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "httpx is required for OllamaProvider. "
-                "Install it with: pip install loopllm[ollama]"
+                "Install it with: pip install cdv[ollama]"
             ) from exc
 
         payload = {

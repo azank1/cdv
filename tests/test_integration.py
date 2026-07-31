@@ -2,7 +2,7 @@
 
 These tests are skipped by default.  To run them:
 
-    LOOPLLM_INTEGRATION=1 pytest tests/test_integration.py -v
+    CDV_INTEGRATION=1 pytest tests/test_integration.py -v
 
 Or:
 
@@ -18,12 +18,12 @@ import os
 
 import pytest
 
-from loopllm.elicitation import IntentRefiner
-from loopllm.engine import LoopConfig, LoopedLLM
-from loopllm.evaluators import JSONSchemaEvaluator, LengthEvaluator
+from cdv.elicitation import IntentRefiner
+from cdv.engine import LoopConfig, LoopedLLM
+from cdv.evaluators import JSONSchemaEvaluator, LengthEvaluator
 
-_SKIP_REASON = "Set LOOPLLM_INTEGRATION=1 to run integration tests"
-_RUN_INTEGRATION = os.environ.get("LOOPLLM_INTEGRATION", "0") == "1"
+_SKIP_REASON = "Set CDV_INTEGRATION=1 to run integration tests"
+_RUN_INTEGRATION = os.environ.get("CDV_INTEGRATION", "0") == "1"
 
 pytestmark = pytest.mark.integration
 
@@ -50,7 +50,7 @@ class TestOllamaIntegration:
     """Integration tests using a local Ollama instance."""
 
     def test_basic_refinement(self) -> None:
-        from loopllm.providers.ollama import OllamaProvider
+        from cdv.providers.ollama import OllamaProvider
 
         provider = OllamaProvider()
         config = LoopConfig(max_iterations=3, quality_threshold=0.7)
@@ -67,7 +67,7 @@ class TestOllamaIntegration:
         assert len(result.output) > 0
 
     def test_elicitation_flow(self) -> None:
-        from loopllm.providers.ollama import OllamaProvider
+        from cdv.providers.ollama import OllamaProvider
 
         provider = OllamaProvider()
         refiner = IntentRefiner(
@@ -87,7 +87,7 @@ class TestOpenRouterIntegration:
     """Integration tests using the OpenRouter API."""
 
     def test_basic_refinement(self) -> None:
-        from loopllm.providers.openrouter import OpenRouterProvider
+        from cdv.providers.openrouter import OpenRouterProvider
 
         provider = OpenRouterProvider(api_key=os.environ["OPENROUTER_API_KEY"])
         config = LoopConfig(max_iterations=2, quality_threshold=0.7)
@@ -104,7 +104,7 @@ class TestOpenRouterIntegration:
         assert len(result.output) > 0
 
     def test_json_generation(self) -> None:
-        from loopllm.providers.openrouter import OpenRouterProvider
+        from cdv.providers.openrouter import OpenRouterProvider
 
         provider = OpenRouterProvider(api_key=os.environ["OPENROUTER_API_KEY"])
         config = LoopConfig(max_iterations=3, quality_threshold=0.8)

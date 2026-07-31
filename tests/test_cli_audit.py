@@ -1,13 +1,13 @@
-"""Tests for the `loopllm paths` and `loopllm audit` CLI commands."""
+"""Tests for the `cdv paths` and `cdv audit` CLI commands."""
 from __future__ import annotations
 
 import json
 import subprocess
 from pathlib import Path
 
-from loopllm.cli import build_parser
-from loopllm.episodes import EpisodicStore
-from loopllm.store import LoopStore
+from cdv.cli import build_parser
+from cdv.episodes import EpisodicStore
+from cdv.store import LoopStore
 
 
 def _run(args: list[str]) -> None:
@@ -30,7 +30,7 @@ def _commit(repo: Path, message: str) -> str:
 
 def test_paths_command_reads_top_level_db_flag(tmp_path: Path, capsys) -> None:
     # --db is defined on the top-level parser, so it must precede the
-    # subcommand name (same convention as `loopllm --db X score ...`).
+    # subcommand name (same convention as `cdv --db X score ...`).
     db = tmp_path / "store.db"
     _run(["--db", str(db), "paths"])
     result = json.loads(capsys.readouterr().out)

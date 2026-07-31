@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from loopllm.local_loop import LocalLoopResult, LocalModelLoop, LoopIteration
+from cdv.local_loop import LocalLoopResult, LocalModelLoop, LoopIteration
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ class TestRewritePrompt:
             deficiencies=["too short"],
             iteration=1,
         )
-        assert "[LOOPLLM | score=0.55 | retry=1/3 | threshold=0.80]" in result
+        assert "[CDV | score=0.55 | retry=1/3 | threshold=0.80]" in result
 
     def test_contains_original_prompt(self):
         loop = _make_loop()

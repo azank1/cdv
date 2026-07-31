@@ -1,4 +1,4 @@
-"""Tests for the `loopllm migrate-legacy` CLI command and legacy-store detection."""
+"""Tests for the `cdv migrate-legacy` CLI command and legacy-store detection."""
 from __future__ import annotations
 
 import json
@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from loopllm.cli import build_parser
-from loopllm.episodes import EpisodicStore
-from loopllm.project_scope import legacy_store_path
-from loopllm.store import SCHEMA_VERSION, LoopStore
+from cdv.cli import build_parser
+from cdv.episodes import EpisodicStore
+from cdv.project_scope import legacy_store_path
+from cdv.store import SCHEMA_VERSION, LoopStore
 
 
 def _run(args: list[str]) -> None:
@@ -146,7 +146,7 @@ def test_legacy_store_path_detection(tmp_path: Path) -> None:
 
 def test_paths_reports_legacy_store(tmp_path: Path, capsys, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("LOOPLLM_PROJECT", raising=False)
+    monkeypatch.delenv("CDV_PROJECT", raising=False)
     legacy = tmp_path / ".loopllm" / "store.db"
     legacy.parent.mkdir()
     _make_legacy_store(legacy)

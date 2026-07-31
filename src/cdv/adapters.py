@@ -17,9 +17,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from loopllm.agent_loop import AgentLoopController
-from loopllm.priors import AdaptivePriors
-from loopllm.step_scorer import build_step_evaluator, score_channel_a
+from cdv.agent_loop import AgentLoopController
+from cdv.priors import AdaptivePriors
+from cdv.step_scorer import build_step_evaluator, score_channel_a
 
 
 class AdaptiveStopper:

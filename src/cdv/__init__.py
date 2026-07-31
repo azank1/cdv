@@ -1,16 +1,16 @@
-"""loop-llm: iterative refinement engine for LLM applications."""
+"""CDV: the judge for AI coding agents — verified refinement loops and audit trails."""
 from __future__ import annotations
 
-from loopllm.adaptive_exit import BayesianExitCondition
-from loopllm.adapters import AdaptiveStopper
-from loopllm.agent_loop import AgentLoopController, AgentLoopSession
-from loopllm.elicitation import (
+from cdv.adaptive_exit import BayesianExitCondition
+from cdv.adapters import AdaptiveStopper
+from cdv.agent_loop import AgentLoopController, AgentLoopSession
+from cdv.elicitation import (
     ClarifyingQuestion,
     ElicitationSession,
     IntentRefiner,
     IntentSpec,
 )
-from loopllm.engine import (
+from cdv.engine import (
     CompositeEvaluator,
     Evaluator,
     EvaluationResult,
@@ -22,14 +22,14 @@ from loopllm.engine import (
     LoopMetrics,
     RefinementResult,
 )
-from loopllm.episodes import EpisodicStore
-from loopllm.guards import AgentLoopGuard, GuardContext, GuardStack
-from loopllm.priors import AdaptivePriors, CallObservation
-from loopllm.step_scorer import DualVerifyScore, conservative_dual_verify
-from loopllm.store import LoopStore, SQLiteBackedPriors
-from loopllm.tasks import Task, TaskOrchestrator, TaskPlan, TaskState
+from cdv.episodes import EpisodicStore
+from cdv.guards import AgentLoopGuard, GuardContext, GuardStack
+from cdv.priors import AdaptivePriors, CallObservation
+from cdv.step_scorer import DualVerifyScore, conservative_dual_verify
+from cdv.store import LoopStore, SQLiteBackedPriors
+from cdv.tasks import Task, TaskOrchestrator, TaskPlan, TaskState
 
-__version__ = "0.11.0"
+__version__ = "1.0.0"
 
 __all__ = [
     # Engine

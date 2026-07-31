@@ -1,8 +1,8 @@
 """Confidence-driven plan registry for scored task management.
 
 Each plan tracks a rolling confidence score derived from:
-- Prompt quality scores (from loopllm_intercept)
-- Output scores (from loopllm_verify_output / evaluators)
+- Prompt quality scores (from cdv_intercept)
+- Output scores (from cdv_verify_output / evaluators)
 
 When rolling_confidence drops below the plan's threshold, the registry
 signals that the current task should be refined or the plan should be
@@ -267,7 +267,7 @@ class PlanRegistry:
         already in memory (idempotent).
 
         Args:
-            store: A :class:`loopllm.store.LoopStore` instance.
+            store: A :class:`cdv.store.LoopStore` instance.
 
         Returns:
             Number of plans loaded.

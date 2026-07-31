@@ -6,12 +6,12 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from loopllm.adaptive_exit import BayesianExitCondition
-from loopllm.engine import ExitConditionProtocol, ExitReason
-from loopllm.priors import AdaptivePriors
+from cdv.adaptive_exit import BayesianExitCondition
+from cdv.engine import ExitConditionProtocol, ExitReason
+from cdv.priors import AdaptivePriors
 
 if TYPE_CHECKING:
-    from loopllm.agent_loop import AgentLoopSession
+    from cdv.agent_loop import AgentLoopSession
 
 CONVERGENCE_DELTA = 0.01
 MAX_STEPS_DEFAULT = 10

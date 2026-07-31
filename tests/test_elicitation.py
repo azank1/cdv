@@ -5,14 +5,14 @@ import json
 from typing import Any
 
 
-from loopllm.elicitation import (
+from cdv.elicitation import (
     QUESTION_TYPES,
     ClarifyingQuestion,
     ElicitationSession,
     IntentRefiner,
     IntentSpec,
 )
-from loopllm.providers.mock import MockLLMProvider
+from cdv.providers.mock import MockLLMProvider
 
 
 # ---------------------------------------------------------------------------

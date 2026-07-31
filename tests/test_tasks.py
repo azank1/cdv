@@ -5,12 +5,12 @@ import json
 
 import pytest
 
-from loopllm.elicitation import IntentSpec
-from loopllm.engine import RefinementResult
-from loopllm.evaluators import CompletenessEvaluator, ConsistencyEvaluator
-from loopllm.providers.mock import MockLLMProvider
-from loopllm.store import LoopStore
-from loopllm.tasks import Task, TaskOrchestrator, TaskPlan, TaskState
+from cdv.elicitation import IntentSpec
+from cdv.engine import RefinementResult
+from cdv.evaluators import CompletenessEvaluator, ConsistencyEvaluator
+from cdv.providers.mock import MockLLMProvider
+from cdv.store import LoopStore
+from cdv.tasks import Task, TaskOrchestrator, TaskPlan, TaskState
 
 
 # ---------------------------------------------------------------------------

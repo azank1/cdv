@@ -1,7 +1,7 @@
-"""structlog configuration for loopllm's process entry points.
+"""structlog configuration for cdv's process entry points.
 
 Left unconfigured, structlog's default logger factory writes to **stdout**
-with no level filtering. That's fatal for two of loopllm's entry points:
+with no level filtering. That's fatal for two of cdv's entry points:
 
 - the MCP server's stdio transport, where stdout *is* the JSON-RPC stream, and
 - any CLI command with a ``--json`` output mode.
@@ -26,10 +26,10 @@ def configure_logging(level: str | None = None, stream: TextIO | None = None) ->
 
     Idempotent and safe to call multiple times (e.g. once from the CLI and
     again from a nested MCP server launch) — later calls simply reconfigure.
-    Not called automatically at package import time, so embedding loopllm as
+    Not called automatically at package import time, so embedding cdv as
     a library never clobbers a host application's own structlog setup.
     """
-    resolved_level = (level or os.environ.get("LOOPLLM_LOG_LEVEL") or _DEFAULT_LEVEL).upper()
+    resolved_level = (level or os.environ.get("CDV_LOG_LEVEL") or _DEFAULT_LEVEL).upper()
     resolved_stream = stream if stream is not None else sys.stderr
     numeric_level = logging.getLevelName(resolved_level)
     if not isinstance(numeric_level, int):

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "loopllm"
-version = "0.11.0"
-description = "MCP server that observes every prompt, scores quality in real time, and closes the loop with iterative refinement. Built on FastMCP, SQLite, and Bayesian priors — no extra LLM required."
+name = "cdv"
+version = "1.0.0"
+description = "The judge for AI coding agents: an MCP sidecar that scores every step through Conservative Dual-Verify (deterministic floor + independent critic), stamps a git-anchored audit trail, and gates CI on it. Built on FastMCP, SQLite, and Bayesian priors — no extra LLM required."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -14,15 +14,17 @@ keywords = [
     "mcp",
     "llm",
     "agent",
+    "verification",
+    "judge",
+    "scorer",
+    "audit-trail",
     "agent-loop",
     "bayesian",
-    "prompt-engineering",
-    "thompson-sampling",
     "cursor",
     "vscode",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
@@ -36,10 +38,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/azank1/loop-llm"
-Repository = "https://github.com/azank1/loop-llm"
-Changelog = "https://github.com/azank1/loop-llm/blob/main/CHANGELOG.md"
-Issues = "https://github.com/azank1/loop-llm/issues"
+Homepage = "https://github.com/azank1/cdv"
+Repository = "https://github.com/azank1/cdv"
+Changelog = "https://github.com/azank1/cdv/blob/main/CHANGELOG.md"
+Issues = "https://github.com/azank1/cdv/issues"
 
 [project.optional-dependencies]
 openrouter = [
@@ -72,11 +74,11 @@ dev = [
 ]
 
 [project.scripts]
-loopllm = "loopllm.cli:main"
-loopllm-mcp = "loopllm.mcp_server:main"
+cdv = "cdv.cli:main"
+cdv-mcp = "cdv.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/loopllm"]
+packages = ["src/cdv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -95,5 +97,5 @@ strict = true
 disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
-module = "loopllm.serve"
+module = "cdv.serve"
 ignore_errors = true

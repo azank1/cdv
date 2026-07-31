@@ -1,4 +1,4 @@
-"""Command-line interface for loop-llm."""
+"""Command-line interface for cdv."""
 from __future__ import annotations
 
 import argparse
@@ -10,24 +10,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from loopllm.elicitation import ClarifyingQuestion, IntentRefiner
-from loopllm.engine import LoopConfig, LoopedLLM
-from loopllm.evaluators import LengthEvaluator
-from loopllm.logging_config import configure_logging
-from loopllm.priors import CallObservation
-from loopllm.project_scope import (
+from cdv.elicitation import ClarifyingQuestion, IntentRefiner
+from cdv.engine import LoopConfig, LoopedLLM
+from cdv.evaluators import LengthEvaluator
+from cdv.logging_config import configure_logging
+from cdv.priors import CallObservation
+from cdv.project_scope import (
     commits_since,
     current_commit_sha,
     legacy_store_path,
     resolve_db_path,
     resolve_project_id,
 )
-from loopllm.provider import LLMProvider
-from loopllm.store import LoopStore, SQLiteBackedPriors
-from loopllm.tasks import TaskOrchestrator
+from cdv.provider import LLMProvider
+from cdv.store import LoopStore, SQLiteBackedPriors
+from cdv.tasks import TaskOrchestrator
 
 # ---------------------------------------------------------------------------
-# `loopllm install-mcp` — one-command MCP registration per IDE
+# `cdv install-mcp` — one-command MCP registration per IDE
 # ---------------------------------------------------------------------------
 
 
@@ -43,7 +43,7 @@ def _user_config_dir(app_name: str) -> Path:
 
 
 class _IdeTarget:
-    """Where and how to write the loopllm MCP server entry for one IDE."""
+    """Where and how to write the cdv MCP server entry for one IDE."""
 
     def __init__(self, name: str, path_fn: Callable[[], Path], key: str, vscode_style: bool):
         self.name = name
@@ -83,49 +83,49 @@ _ALL_IDES = ["cursor", "vscode", "antigravity"]
 # The marker lets re-runs detect (and never duplicate) an installed block.
 # ---------------------------------------------------------------------------
 
-_RULES_MARKER = "<!-- loopllm-agent-rules -->"
+_RULES_MARKER = "<!-- cdv-agent-rules -->"
 
 _RULES_BODY = _RULES_MARKER + """
-# loopllm agent rules
+# cdv agent rules
 
-loopllm is an MCP sidecar that scores prompts, verifies agent work, and remembers
+cdv is an MCP sidecar that scores prompts, verifies agent work, and remembers
 past runs. Follow this contract for non-trivial requests:
 
-1. **Observe first.** Call `loopllm_intercept` with the user's message before acting.
+1. **Observe first.** Call `cdv_intercept` with the user's message before acting.
    Follow its `route` (elicit / refine / decompose). If it reports
-   `recall_available: true`, call `loopllm_recall` before planning.
+   `recall_available: true`, call `cdv_recall` before planning.
 
 2. **Recall before planning.** For tasks similar to past work, call
-   `loopllm_recall("<goal>")` to reuse what worked. `loopllm_loop_start` also returns
+   `cdv_recall("<goal>")` to reuse what worked. `cdv_loop_start` also returns
    `similar_episodes` automatically — read them.
 
 3. **Verify, don't self-grade.** For iterative work, use
-   `loopllm_loop_start(goal, task_type, required_patterns=[...])`, then after each step
-   call `loopllm_loop_step(session_id, step_output=<artifact>)` — submit the real
+   `cdv_loop_start(goal, task_type, required_patterns=[...])`, then after each step
+   call `cdv_loop_step(session_id, step_output=<artifact>)` — submit the real
    artifact (test log, diff, summary), **never your own score**. The server runs
    Conservative Dual-Verify (deterministic checks + an independent critic) and returns
    the verified score, a continue/stop verdict, and `cdv_mode`
-   (`full` vs `channel_a_only`). Honor the verdict; then `loopllm_loop_end`.
+   (`full` vs `channel_a_only`). Honor the verdict; then `cdv_loop_end`.
 
-4. **Resume after reload.** If the IDE reloaded, call `loopllm_run_status`. If it shows
-   an active run, call `loopllm_loop_resume` (optionally with `session_id`) **before**
+4. **Resume after reload.** If the IDE reloaded, call `cdv_run_status`. If it shows
+   an active run, call `cdv_loop_resume` (optionally with `session_id`) **before**
    starting a new loop, so the in-progress loop continues instead of restarting cold.
 
-5. **Memory is automatic.** `loopllm_loop_end` records the outcome to episodic memory
+5. **Memory is automatic.** `cdv_loop_end` records the outcome to episodic memory
    for next time — no extra step needed.
 """
 
 _RULES_FILES: dict[str, tuple[str, str]] = {
     "cursor": (
-        ".cursor/rules/loopllm.mdc",
+        ".cursor/rules/cdv.mdc",
         "---\n"
-        "description: How to drive the loopllm MCP sidecar (observe, verify, remember, resume)\n"
+        "description: How to drive the cdv MCP sidecar (observe, verify, remember, resume)\n"
         "alwaysApply: true\n"
         "---\n\n"
         + _RULES_BODY,
     ),
     "vscode": (
-        ".github/instructions/loopllm.instructions.md",
+        ".github/instructions/cdv.instructions.md",
         '---\napplyTo: "**"\n---\n\n' + _RULES_BODY,
     ),
     "claude-code": ("CLAUDE.md", _RULES_BODY),
@@ -134,9 +134,9 @@ _RULES_FILES: dict[str, tuple[str, str]] = {
 
 def _mcp_server_entry(vscode_style: bool, provider: str, model: str) -> dict[str, Any]:
     entry: dict[str, Any] = {
-        "command": "loopllm",
+        "command": "cdv",
         "args": ["mcp-server", "--provider", provider],
-        "env": {"LOOPLLM_MODEL": model},
+        "env": {"CDV_MODEL": model},
     }
     if vscode_style:
         entry = {"type": "stdio", **entry}
@@ -157,7 +157,7 @@ def _get_provider(name: str, **kwargs: Any) -> LLMProvider:
         SystemExit: If the provider name is unknown.
     """
     if name == "mock":
-        from loopllm.providers.mock import MockLLMProvider
+        from cdv.providers.mock import MockLLMProvider
 
         responses = [
             '{"result": "initial attempt"}',
@@ -166,13 +166,13 @@ def _get_provider(name: str, **kwargs: Any) -> LLMProvider:
         ]
         return MockLLMProvider(responses=responses)
     elif name == "ollama":
-        from loopllm.providers.ollama import OllamaProvider
+        from cdv.providers.ollama import OllamaProvider
 
         return OllamaProvider(base_url=kwargs.get("base_url", "http://localhost:11434"))
     elif name == "openrouter":
         import os
 
-        from loopllm.providers.openrouter import OpenRouterProvider
+        from cdv.providers.openrouter import OpenRouterProvider
 
         api_key = kwargs.get("api_key") or os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
@@ -185,7 +185,7 @@ def _get_provider(name: str, **kwargs: Any) -> LLMProvider:
 
 
 def _get_store(db_path: str | None) -> LoopStore:
-    """Create a LoopStore, defaulting to a per-project ~/.loopllm/projects/<id>/store.db."""
+    """Create a LoopStore, defaulting to a per-project ~/.cdv/projects/<id>/store.db."""
     path = resolve_db_path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     return LoopStore(db_path=path)
@@ -350,14 +350,14 @@ def cmd_run(args: argparse.Namespace) -> None:
 def cmd_score(args: argparse.Namespace) -> None:
     """Score a prompt and update status.json (per-project) for the VS Code extension.
 
-    This is the same scoring used by loopllm_intercept but runs standalone,
+    This is the same scoring used by cdv_intercept but runs standalone,
     with no MCP server or agent required. The extension watches status.json
     via fs.watch and updates the gauge and dashboard immediately.
     """
     import time
 
     # Import scorer — mcp import is guarded so this is safe even without mcp pkg
-    from loopllm.mcp_server import (
+    from cdv.mcp_server import (
         _score_prompt_quality,
         _classify_task_type,
     )
@@ -474,7 +474,7 @@ def cmd_paths(args: argparse.Namespace) -> None:
         "active_runs_dir": str(db_path.parent / "active_runs"),
         "consultation": str(db_path.parent / "consultation.json"),
         # Pre-v0.10 flat global store, if one exists and isn't already the
-        # resolved db — a hint that `loopllm migrate-legacy` applies here.
+        # resolved db — a hint that `cdv migrate-legacy` applies here.
         "legacy_store": (
             str(legacy)
             if legacy is not None and legacy.resolve() != db_path.resolve()
@@ -495,9 +495,9 @@ def cmd_audit(args: argparse.Namespace) -> None:
 
     ``--export <path>`` additionally writes the (filtered) episodes as a
     portable JSON artifact, keyed by ``commit_sha``. The local per-project
-    SQLite store this reads from lives under ``~/.loopllm/`` and does not
+    SQLite store this reads from lives under ``~/.cdv/`` and does not
     exist on a CI runner; committing this artifact alongside the code it
-    verifies is what lets ``loopllm audit-gate`` check a PR in CI without
+    verifies is what lets ``cdv audit-gate`` check a PR in CI without
     that local state.
     """
     store = _get_store(args.db)
@@ -562,9 +562,9 @@ def cmd_audit(args: argparse.Namespace) -> None:
 def cmd_audit_gate(args: argparse.Namespace) -> None:
     """CI gate: check that code-touching commits in a range carry a verification record.
 
-    Reads a *committed* audit artifact (default ``.loopllm/audit.json``,
-    produced by ``loopllm audit --export``) instead of the local per-project
-    SQLite store — a CI runner has no ``~/.loopllm/`` state, so the artifact
+    Reads a *committed* audit artifact (default ``.cdv/audit.json``,
+    produced by ``cdv audit --export``) instead of the local per-project
+    SQLite store — a CI runner has no ``~/.cdv/`` state, so the artifact
     is the only portable record of what happened locally. Scopes to non-merge
     commits reachable from HEAD but not from ``--since`` (a merge commit
     isn't itself something an agent wrote and verified).
@@ -607,7 +607,7 @@ def cmd_audit_gate(args: argparse.Namespace) -> None:
     else:
         print(
             f"Warning: no audit artifact at {artifact_path} — treating all "
-            f"commits as unverified. Run `loopllm audit --export {artifact_path}`.",
+            f"commits as unverified. Run `cdv audit --export {artifact_path}`.",
             file=sys.stderr,
         )
 
@@ -642,7 +642,7 @@ def cmd_migrate_legacy(args: argparse.Namespace) -> None:
     """Copy the pre-v0.10 global store into this project's scoped store.
 
     Before v0.10 every project shared one ``~/.loopllm/store.db``. State is
-    now scoped per project (``~/.loopllm/projects/<id>/store.db``), which
+    now scoped per project (``~/.cdv/projects/<id>/store.db``), which
     leaves an existing global store invisible — its learned priors and
     episodes would be silently orphaned. This command imports it, once,
     explicitly: run it from each project that should inherit the legacy
@@ -687,10 +687,10 @@ def cmd_migrate_legacy(args: argparse.Namespace) -> None:
 
 
 def _install_rules(ide_name: str, force: bool) -> None:
-    """Write (or append) the loopllm agent-rules file for one IDE into cwd.
+    """Write (or append) the cdv agent-rules file for one IDE into cwd.
 
     Dedicated rule files (Cursor, VS Code) are written whole; ``CLAUDE.md`` is
-    only ever appended to, never overwritten. Existing loopllm rules are left
+    only ever appended to, never overwritten. Existing cdv rules are left
     alone unless ``force`` — and ``CLAUDE.md`` is never clobbered even then.
     """
     spec = _RULES_FILES.get(ide_name)
@@ -707,11 +707,11 @@ def _install_rules(ide_name: str, force: bool) -> None:
             return
         if path.name == "CLAUDE.md":
             path.write_text(existing.rstrip() + "\n\n" + content)
-            print(f"[{ide_name}] appended loopllm rules to {path}")
+            print(f"[{ide_name}] appended cdv rules to {path}")
             return
         if not force:
             print(
-                f"[{ide_name}] {path} exists without loopllm rules — skipping "
+                f"[{ide_name}] {path} exists without cdv rules — skipping "
                 "(use --force to overwrite)",
                 file=sys.stderr,
             )
@@ -723,9 +723,9 @@ def _install_rules(ide_name: str, force: bool) -> None:
 
 
 def cmd_install_mcp(args: argparse.Namespace) -> None:
-    """Register the loopllm MCP server in one or more IDE configs, one command.
+    """Register the cdv MCP server in one or more IDE configs, one command.
 
-    Merges a ``loopllm`` entry into each target's existing MCP config —
+    Merges a ``cdv`` entry into each target's existing MCP config —
     other configured servers (e.g. GitHub's MCP server) are preserved.
     Cursor/VS Code/Antigravity are user-scoped (``~/.cursor/mcp.json`` etc.);
     Claude Code is project-scoped (``.mcp.json`` in the current directory,
@@ -774,14 +774,14 @@ def cmd_install_mcp(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for the ``loopllm`` CLI."""
+    """Build the argument parser for the ``cdv`` CLI."""
     parser = argparse.ArgumentParser(
-        prog="loopllm",
+        prog="cdv",
         description="Iterative refinement engine with Bayesian intent elicitation.",
     )
     parser.add_argument(
         "--db", default=None,
-        help="Path to SQLite database (default: per-project ~/.loopllm/projects/<id>/store.db)",
+        help="Path to SQLite database (default: per-project ~/.cdv/projects/<id>/store.db)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -870,8 +870,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- paths ---
     # Note: --db is intentionally *not* redeclared here — it reads from the
-    # top-level --db (parser.add_argument("--db", ...) above), so `loopllm
-    # --db X paths` and `loopllm paths` both work as expected.
+    # top-level --db (parser.add_argument("--db", ...) above), so `cdv
+    # --db X paths` and `cdv paths` both work as expected.
     p_paths = subparsers.add_parser(
         "paths", help="Print resolved per-project state file paths as JSON"
     )
@@ -892,7 +892,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument(
         "--export", default=None, metavar="PATH",
         help="Also write the (filtered) episodes as a portable JSON artifact at PATH "
-             "(e.g. .loopllm/audit.json), for `loopllm audit-gate` to read in CI",
+             "(e.g. .cdv/audit.json), for `cdv audit-gate` to read in CI",
     )
     p_audit.set_defaults(func=cmd_audit)
 
@@ -907,8 +907,8 @@ def build_parser() -> argparse.ArgumentParser:
              "non-merge commits reachable from HEAD but not from this ref",
     )
     p_gate.add_argument(
-        "--artifact", default=".loopllm/audit.json", metavar="PATH",
-        help="Committed audit artifact written by `loopllm audit --export` (default: .loopllm/audit.json)",
+        "--artifact", default=".cdv/audit.json", metavar="PATH",
+        help="Committed audit artifact written by `cdv audit --export` (default: .cdv/audit.json)",
     )
     p_gate.add_argument(
         "--min-score", type=float, default=None, metavar="X",
@@ -938,7 +938,7 @@ def build_parser() -> argparse.ArgumentParser:
     # --- install-mcp ---
     p_install = subparsers.add_parser(
         "install-mcp",
-        help="Register the loopllm MCP server in Cursor/VS Code/Antigravity/Claude Code — one command",
+        help="Register the cdv MCP server in Cursor/VS Code/Antigravity/Claude Code — one command",
     )
     p_install.add_argument(
         "--ide", default="all",
@@ -946,9 +946,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target IDE ('all' = cursor+vscode+antigravity; claude-code is opt-in "
              "since it writes a project-scoped .mcp.json in the current directory)",
     )
-    p_install.add_argument("--name", default="loopllm", help="MCP server name to register")
-    p_install.add_argument("--provider", default="agent", help="LOOPLLM provider (default: agent)")
-    p_install.add_argument("--model", default="agent", help="LOOPLLM_MODEL env value to set")
+    p_install.add_argument("--name", default="cdv", help="MCP server name to register")
+    p_install.add_argument("--provider", default="agent", help="CDV provider (default: agent)")
+    p_install.add_argument("--model", default="agent", help="CDV_MODEL env value to set")
     p_install.add_argument(
         "--force", action="store_true", help="Overwrite an existing entry with this name"
     )
@@ -956,7 +956,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--rules", action="store_true",
         help="Also drop project-scoped agent-rules files into the current directory "
              "(Cursor .mdc, VS Code instructions, CLAUDE.md) so the agent actually "
-             "consults loopllm instead of merely having the tools available",
+             "consults cdv instead of merely having the tools available",
     )
     p_install.set_defaults(func=cmd_install_mcp)
 
@@ -967,15 +967,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_mcp.add_argument(
         "--provider", default=None,
         choices=["agent", "mock", "ollama", "openrouter"],
-        help="LLM provider (default: LOOPLLM_PROVIDER env or agent)",
+        help="LLM provider (default: CDV_PROVIDER env or agent)",
     )
     p_mcp.add_argument(
         "--model", default=None,
-        help="Default model (default: LOOPLLM_MODEL env or gpt-4o-mini)",
+        help="Default model (default: CDV_MODEL env or gpt-4o-mini)",
     )
     p_mcp.add_argument(
         "--db", default=None,
-        help="Path to SQLite database (default: per-project ~/.loopllm/projects/<id>/store.db)",
+        help="Path to SQLite database (default: per-project ~/.cdv/projects/<id>/store.db)",
     )
     p_mcp.set_defaults(func=cmd_mcp_server)
 
@@ -1002,13 +1002,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
-    """Start the loopllm scoring REST server."""
+    """Start the cdv scoring REST server."""
     try:
-        from loopllm.serve import run_server
+        from cdv.serve import run_server
     except ImportError:
         print(
-            "Error: FastAPI and uvicorn are required for `loopllm serve`.\n"
-            "Install with: pip install loopllm[serve]",
+            "Error: FastAPI and uvicorn are required for `cdv serve`.\n"
+            "Install with: pip install cdv[serve]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1021,18 +1021,18 @@ def cmd_mcp_server(args: argparse.Namespace) -> None:
 
     # Pass CLI args as env vars so mcp_server.py picks them up
     if args.provider:
-        os.environ["LOOPLLM_PROVIDER"] = args.provider
+        os.environ["CDV_PROVIDER"] = args.provider
     if args.model:
-        os.environ["LOOPLLM_MODEL"] = args.model
+        os.environ["CDV_MODEL"] = args.model
     if args.db:
-        os.environ["LOOPLLM_DB"] = args.db
+        os.environ["CDV_DB"] = args.db
 
     try:
-        from loopllm.mcp_server import main as mcp_main
+        from cdv.mcp_server import main as mcp_main
     except ImportError:
         print(
             "Error: The mcp package is required for the MCP server.\n"
-            "Install it with: pip install loopllm[mcp]",
+            "Install it with: pip install cdv[mcp]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1041,7 +1041,7 @@ def cmd_mcp_server(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """Entry point for the ``loopllm`` CLI."""
+    """Entry point for the ``cdv`` CLI."""
     configure_logging()
     parser = build_parser()
     args = parser.parse_args()

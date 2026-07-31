@@ -1,10 +1,10 @@
-"""Tests for the `loopllm install-mcp` one-command IDE installer."""
+"""Tests for the `cdv install-mcp` one-command IDE installer."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from loopllm.cli import build_parser
+from cdv.cli import build_parser
 
 
 def _run(args: list[str]) -> None:
@@ -17,17 +17,17 @@ def test_install_mcp_all_writes_cursor_vscode_antigravity(tmp_path: Path, monkey
     _run(["install-mcp", "--ide", "all"])
 
     cursor = json.loads((tmp_path / ".cursor" / "mcp.json").read_text())
-    assert cursor["mcpServers"]["loopllm"]["command"] == "loopllm"
-    assert "type" not in cursor["mcpServers"]["loopllm"]
+    assert cursor["mcpServers"]["cdv"]["command"] == "cdv"
+    assert "type" not in cursor["mcpServers"]["cdv"]
 
     vscode = json.loads((tmp_path / ".config" / "Code" / "User" / "mcp.json").read_text())
-    assert vscode["servers"]["loopllm"]["type"] == "stdio"
+    assert vscode["servers"]["cdv"]["type"] == "stdio"
     assert vscode["inputs"] == []
 
     antigravity = json.loads(
         (tmp_path / ".config" / "Antigravity" / "User" / "mcp.json").read_text()
     )
-    assert antigravity["servers"]["loopllm"]["command"] == "loopllm"
+    assert antigravity["servers"]["cdv"]["command"] == "cdv"
 
 
 def test_install_mcp_preserves_other_servers(tmp_path: Path, monkeypatch) -> None:
@@ -43,7 +43,7 @@ def test_install_mcp_preserves_other_servers(tmp_path: Path, monkeypatch) -> Non
 
     result = json.loads(cfg_path.read_text())
     assert "github" in result["servers"]
-    assert "loopllm" in result["servers"]
+    assert "cdv" in result["servers"]
 
 
 def test_install_mcp_skips_existing_without_force(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -62,7 +62,7 @@ def test_install_mcp_force_overwrites(tmp_path: Path, monkeypatch) -> None:
     _run(["install-mcp", "--ide", "cursor", "--provider", "agent", "--force"])
 
     cursor = json.loads((tmp_path / ".cursor" / "mcp.json").read_text())
-    assert cursor["mcpServers"]["loopllm"]["args"] == ["mcp-server", "--provider", "agent"]
+    assert cursor["mcpServers"]["cdv"]["args"] == ["mcp-server", "--provider", "agent"]
 
 
 def test_install_mcp_claude_code_writes_project_scoped_file(tmp_path: Path, monkeypatch) -> None:
@@ -74,7 +74,7 @@ def test_install_mcp_claude_code_writes_project_scoped_file(tmp_path: Path, monk
     _run(["install-mcp", "--ide", "claude-code"])
 
     result = json.loads((project / ".mcp.json").read_text())
-    assert result["mcpServers"]["loopllm"]["command"] == "loopllm"
+    assert result["mcpServers"]["cdv"]["command"] == "cdv"
 
 
 def test_install_mcp_all_excludes_claude_code(tmp_path: Path, monkeypatch) -> None:
@@ -102,11 +102,11 @@ def test_install_mcp_invalid_json_skips_without_crashing(tmp_path: Path, monkeyp
 
 def test_install_mcp_custom_name_and_model(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    _run(["install-mcp", "--ide", "cursor", "--name", "loopllm-dev", "--model", "gpt-4o"])
+    _run(["install-mcp", "--ide", "cursor", "--name", "cdv-dev", "--model", "gpt-4o"])
 
     cursor = json.loads((tmp_path / ".cursor" / "mcp.json").read_text())
-    assert "loopllm-dev" in cursor["mcpServers"]
-    assert cursor["mcpServers"]["loopllm-dev"]["env"]["LOOPLLM_MODEL"] == "gpt-4o"
+    assert "cdv-dev" in cursor["mcpServers"]
+    assert cursor["mcpServers"]["cdv-dev"]["env"]["CDV_MODEL"] == "gpt-4o"
 
 
 # --- --rules: project-scoped agent instruction files ---
@@ -120,7 +120,7 @@ def test_install_mcp_no_rules_by_default(tmp_path: Path, monkeypatch) -> None:
 
     _run(["install-mcp", "--ide", "cursor"])
 
-    assert not (project / ".cursor" / "rules" / "loopllm.mdc").exists()
+    assert not (project / ".cursor" / "rules" / "cdv.mdc").exists()
 
 
 def test_install_mcp_rules_cursor_writes_mdc(tmp_path: Path, monkeypatch) -> None:
@@ -131,9 +131,9 @@ def test_install_mcp_rules_cursor_writes_mdc(tmp_path: Path, monkeypatch) -> Non
 
     _run(["install-mcp", "--ide", "cursor", "--rules"])
 
-    rules = (project / ".cursor" / "rules" / "loopllm.mdc").read_text()
+    rules = (project / ".cursor" / "rules" / "cdv.mdc").read_text()
     assert "alwaysApply: true" in rules
-    assert "loopllm-agent-rules" in rules
+    assert "cdv-agent-rules" in rules
     assert "never your own score" in rules
 
 
@@ -145,9 +145,9 @@ def test_install_mcp_rules_vscode_writes_instructions(tmp_path: Path, monkeypatc
 
     _run(["install-mcp", "--ide", "vscode", "--rules"])
 
-    rules = (project / ".github" / "instructions" / "loopllm.instructions.md").read_text()
+    rules = (project / ".github" / "instructions" / "cdv.instructions.md").read_text()
     assert 'applyTo: "**"' in rules
-    assert "loopllm-agent-rules" in rules
+    assert "cdv-agent-rules" in rules
 
 
 def test_install_mcp_rules_claude_code_creates_then_appends(tmp_path: Path, monkeypatch) -> None:
@@ -158,7 +158,7 @@ def test_install_mcp_rules_claude_code_creates_then_appends(tmp_path: Path, monk
 
     _run(["install-mcp", "--ide", "claude-code", "--rules"])
     claude_md = project / "CLAUDE.md"
-    assert "loopllm-agent-rules" in claude_md.read_text()
+    assert "cdv-agent-rules" in claude_md.read_text()
 
     # Existing CLAUDE.md content is preserved, rules appended
     claude_md.write_text("# My project\n\nDo things my way.\n")
@@ -166,7 +166,7 @@ def test_install_mcp_rules_claude_code_creates_then_appends(tmp_path: Path, monk
     _run(["install-mcp", "--ide", "claude-code", "--rules", "--force"])
     text = claude_md.read_text()
     assert text.startswith("# My project")
-    assert "loopllm-agent-rules" in text
+    assert "cdv-agent-rules" in text
 
 
 def test_install_mcp_rules_rerun_does_not_duplicate(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -179,7 +179,7 @@ def test_install_mcp_rules_rerun_does_not_duplicate(tmp_path: Path, monkeypatch,
     _run(["install-mcp", "--ide", "claude-code", "--rules", "--force"])
     out = capsys.readouterr().out
     assert "rules already present" in out
-    assert project.joinpath("CLAUDE.md").read_text().count("loopllm-agent-rules") == 1
+    assert project.joinpath("CLAUDE.md").read_text().count("cdv-agent-rules") == 1
 
 
 def test_install_mcp_rules_existing_dedicated_file_not_clobbered(
@@ -187,7 +187,7 @@ def test_install_mcp_rules_existing_dedicated_file_not_clobbered(
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     project = tmp_path / "project"
-    rules_path = project / ".cursor" / "rules" / "loopllm.mdc"
+    rules_path = project / ".cursor" / "rules" / "cdv.mdc"
     rules_path.parent.mkdir(parents=True)
     rules_path.write_text("my own custom rules")
     monkeypatch.chdir(project)
@@ -221,4 +221,4 @@ def test_install_mcp_rules_written_even_when_config_exists(tmp_path: Path, monke
     _run(["install-mcp", "--ide", "cursor"])  # config only
     _run(["install-mcp", "--ide", "cursor", "--rules"])  # config skipped, rules still written
 
-    assert (project / ".cursor" / "rules" / "loopllm.mdc").exists()
+    assert (project / ".cursor" / "rules" / "cdv.mdc").exists()

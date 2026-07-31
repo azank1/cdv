@@ -14,17 +14,17 @@ from typing import Any
 
 import structlog
 
-from loopllm.elicitation import IntentRefiner, IntentSpec
-from loopllm.engine import (
+from cdv.elicitation import IntentRefiner, IntentSpec
+from cdv.engine import (
     EvaluationResult,
     LoopConfig,
     LoopedLLM,
     RefinementResult,
 )
-from loopllm.evaluators import LengthEvaluator
-from loopllm.priors import AdaptivePriors, CallObservation
-from loopllm.provider import LLMProvider
-from loopllm.store import LoopStore
+from cdv.evaluators import LengthEvaluator
+from cdv.priors import AdaptivePriors, CallObservation
+from cdv.provider import LLMProvider
+from cdv.store import LoopStore
 
 logger = structlog.get_logger(__name__)
 

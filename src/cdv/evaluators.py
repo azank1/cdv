@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any, Callable
 
-from loopllm.engine import EvaluationResult
+from cdv.engine import EvaluationResult
 
 
 class ThresholdEvaluator:

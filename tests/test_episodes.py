@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from loopllm.episodes import EpisodicStore, extract_tags, summarize_artifacts, tokenize_for_recall
-from loopllm.store import LoopStore, SCHEMA_VERSION
+from cdv.episodes import EpisodicStore, extract_tags, summarize_artifacts, tokenize_for_recall
+from cdv.store import LoopStore, SCHEMA_VERSION
 
 
 def _git(args: list[str], cwd) -> None:

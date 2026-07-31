@@ -1,6 +1,6 @@
 """DAG scheduler for IDE-compatible virtual sub-agents.
 
-One IDE agent acts as the worker; loopllm schedules dependency-ordered nodes,
+One IDE agent acts as the worker; cdv schedules dependency-ordered nodes,
 scores each submission via CDV, and merges verified outputs.
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ from typing import Any
 
 import structlog
 
-from loopllm.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
-from loopllm.step_scorer import build_step_evaluator, score_channel_a
+from cdv.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
+from cdv.step_scorer import build_step_evaluator, score_channel_a
 
 logger = structlog.get_logger(__name__)
 
@@ -295,7 +295,7 @@ class DagScheduler:
                 node.quality_criteria,
                 **node.evaluator_kwargs,
             )
-            from loopllm.step_scorer import conservative_dual_verify
+            from cdv.step_scorer import conservative_dual_verify
 
             dual = await conservative_dual_verify(
                 step_output=step_output,

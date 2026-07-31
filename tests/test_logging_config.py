@@ -7,8 +7,8 @@ import io
 import pytest
 import structlog
 
-from loopllm.logging_config import configure_logging
-from loopllm.store import LoopStore
+from cdv.logging_config import configure_logging
+from cdv.store import LoopStore
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +52,7 @@ def test_configure_logging_is_idempotent() -> None:
 def test_log_level_env_override(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("LOOPLLM_LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("CDV_LOG_LEVEL", "DEBUG")
     buffer = io.StringIO()
     configure_logging(stream=buffer)
 

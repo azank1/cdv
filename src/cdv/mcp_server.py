@@ -1,4 +1,4 @@
-"""MCP server exposing loop-llm tools to IDE agents.
+"""MCP server exposing cdv tools to IDE agents.
 
 Provides iterative refinement, intent elicitation, task orchestration,
 Bayesian meta-learning, and prompt quality analysis as MCP tools for
@@ -6,9 +6,9 @@ VS Code Copilot, Cursor, and other MCP-compatible clients.
 
 Usage::
 
-    loopllm mcp-server --provider ollama --model qwen2.5:0.5b
+    cdv mcp-server --provider ollama --model qwen2.5:0.5b
     # or
-    python -m loopllm.mcp_server
+    python -m cdv.mcp_server
 """
 from __future__ import annotations
 
@@ -21,25 +21,25 @@ from typing import Any
 
 import structlog
 
-from loopllm.agent_loop import AgentLoopController
-from loopllm.elicitation import ElicitationSession, IntentRefiner, IntentSpec
-from loopllm.engine import LoopConfig, LoopedLLM
-from loopllm.evaluator_factory import build_evaluator
-from loopllm.step_scorer import (
+from cdv.agent_loop import AgentLoopController
+from cdv.elicitation import ElicitationSession, IntentRefiner, IntentSpec
+from cdv.engine import LoopConfig, LoopedLLM
+from cdv.evaluator_factory import build_evaluator
+from cdv.step_scorer import (
     conservative_dual_verify,
     legacy_self_report_score,
     build_step_evaluator,
 )
-from loopllm.priors import CallObservation
-from loopllm.project_scope import legacy_store_path, resolve_db_path
-from loopllm.provider import LLMProvider
-from loopllm.dag_scheduler import DagScheduler
-from loopllm.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
-from loopllm.logging_config import configure_logging
-from loopllm.plan_registry import get_registry
-from loopllm.providers.agent import AgentPassthroughProvider
-from loopllm.store import LoopStore, SQLiteBackedPriors
-from loopllm.tasks import TaskOrchestrator
+from cdv.priors import CallObservation
+from cdv.project_scope import legacy_store_path, resolve_db_path
+from cdv.provider import LLMProvider
+from cdv.dag_scheduler import DagScheduler
+from cdv.episodes import EpisodicStore, artifact_ref_hash, summarize_artifacts
+from cdv.logging_config import configure_logging
+from cdv.plan_registry import get_registry
+from cdv.providers.agent import AgentPassthroughProvider
+from cdv.store import LoopStore, SQLiteBackedPriors
+from cdv.tasks import TaskOrchestrator
 
 logger = structlog.get_logger(__name__)
 
@@ -77,7 +77,7 @@ def _init_state() -> None:
     if _store is not None:
         return
 
-    db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
+    db_path = resolve_db_path(os.environ.get("CDV_DB"))
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if not db_path.exists():
         # Fresh project store, but a pre-v0.10 flat global store exists: point
@@ -88,19 +88,19 @@ def _init_state() -> None:
                 "legacy_global_store_found",
                 legacy=str(legacy),
                 hint=(
-                    "run `loopllm migrate-legacy` to import it into this "
-                    "project, or set LOOPLLM_DB to keep using it directly"
+                    "run `cdv migrate-legacy` to import it into this "
+                    "project, or set CDV_DB to keep using it directly"
                 ),
             )
     _store = LoopStore(db_path=db_path)
     _priors = SQLiteBackedPriors(_store)
-    _default_model = os.environ.get("LOOPLLM_MODEL", "gpt-4o-mini")
+    _default_model = os.environ.get("CDV_MODEL", "gpt-4o-mini")
     _status_path = db_path.parent / "status.json"
     _history_path = db_path.parent / "prompt_history.json"
     _episodes_feed_path = db_path.parent / "episodes_feed.json"
     _consultation_path = db_path.parent / "consultation.json"
 
-    provider_name = os.environ.get("LOOPLLM_PROVIDER", "agent")
+    provider_name = os.environ.get("CDV_PROVIDER", "agent")
     _provider = _make_provider(provider_name)
 
 
@@ -135,19 +135,19 @@ def _make_provider(name: str) -> LLMProvider:
     if name == "agent":
         return AgentPassthroughProvider()
     elif name == "mock":
-        from loopllm.providers.mock import MockLLMProvider
+        from cdv.providers.mock import MockLLMProvider
 
         return MockLLMProvider(responses=[
             '{"result": "initial attempt"}',
             '{"result": "improved", "details": "comprehensive", "quality": "high"}',
         ])
     elif name == "ollama":
-        from loopllm.providers.ollama import OllamaProvider
+        from cdv.providers.ollama import OllamaProvider
 
         base_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         return OllamaProvider(base_url=base_url)
     elif name == "openrouter":
-        from loopllm.providers.openrouter import OpenRouterProvider
+        from cdv.providers.openrouter import OpenRouterProvider
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
@@ -160,7 +160,7 @@ def _make_provider(name: str) -> LLMProvider:
 def _get_provider(provider_override: str | None = None) -> LLMProvider:
     """Return the provider, applying optional per-call override."""
     _init_state()
-    if provider_override and provider_override != os.environ.get("LOOPLLM_PROVIDER", "agent"):
+    if provider_override and provider_override != os.environ.get("CDV_PROVIDER", "agent"):
         return _make_provider(provider_override)
     assert _provider is not None
     return _provider
@@ -239,7 +239,7 @@ def _get_agent_loop() -> AgentLoopController:
 def _get_episodic() -> EpisodicStore:
     global _episodic  # noqa: PLW0603
     if _episodic is None:
-        db_path = resolve_db_path(os.environ.get("LOOPLLM_DB"))
+        db_path = resolve_db_path(os.environ.get("CDV_DB"))
         mirror = db_path.parent / "active_run.json"
         mirror_dir = db_path.parent / "active_runs"
         _episodic = EpisodicStore(_get_store(), mirror_path=mirror, mirror_dir=mirror_dir)
@@ -508,12 +508,12 @@ def _estimate_complexity(prompt: str) -> float:
 
 
 def _mark_consulted(tool_name: str) -> None:
-    """Record that the IDE agent actually engaged loopllm's verification path.
+    """Record that the IDE agent actually engaged cdv's verification path.
 
     Written on the handful of tools that represent real consultation
     (intercept, loop_start/step, dag_compile/submit) — not passive reads like
     run_status or recall. The VS Code extension compares this timestamp
-    against its own activation time to render an undismissable "PromptLoop
+    against its own activation time to render an undismissable "CDV
     not consulted this session" signal when a session has edits but no
     corresponding entry here. This is advisory only: MCP gives no way to
     block a non-compliant agent, so visibility is the enforcement lever.
@@ -587,23 +587,23 @@ def _tool_intercept(prompt: str) -> str:
         route = "elicit"
         reason = ("Prompt is too vague — clarifying questions will "
                   "significantly improve output quality")
-        next_tool = "loopllm_elicitation_start"
+        next_tool = "cdv_elicitation_start"
     elif complexity > 0.6:
         route = "decompose"
         reason = (
             f"Complex task (complexity={complexity:.2f}) — use DAG virtual "
-            f"sub-agents (loopllm_dag_compile) with verified node boundaries"
+            f"sub-agents (cdv_dag_compile) with verified node boundaries"
         )
-        next_tool = "loopllm_dag_compile"
+        next_tool = "cdv_dag_compile"
     elif q < 0.6:
         route = "elicit_then_refine"
         reason = ("Prompt has gaps — quick elicitation then refinement "
                   "recommended")
-        next_tool = "loopllm_elicitation_start"
+        next_tool = "cdv_elicitation_start"
     else:
         route = "refine"
         reason = "Prompt is clear enough — direct refinement loop"
-        next_tool = "loopllm_refine"
+        next_tool = "cdv_refine"
 
     store.record_prompt({
         "prompt_text": prompt[:500],
@@ -653,7 +653,7 @@ def _tool_intercept(prompt: str) -> str:
             result["recall_available"] = True
             result["recall_top_hit"] = hits[0].get("goal", "")
             result["recall_hint"] = (
-                "Similar past work found — call loopllm_recall before planning."
+                "Similar past work found — call cdv_recall before planning."
             )
         else:
             result["recall_available"] = False
@@ -1125,7 +1125,7 @@ def _tool_elicitation_start(
             "task_type": session.task_type,
         }
         if q_dict:
-            from loopllm.elicitation import ClarifyingQuestion
+            from cdv.elicitation import ClarifyingQuestion
             q = ClarifyingQuestion(
                 text=q_dict["text"],
                 question_type=q_dict["question_type"],
@@ -1193,7 +1193,7 @@ def _tool_elicitation_answer(session_id: str, answer: str) -> str:
 
     # Agent mode: use static questions; no LLM needed.
     if state.get("agent_mode"):
-        from loopllm.elicitation import ClarifyingQuestion
+        from cdv.elicitation import ClarifyingQuestion
         asked_types = {q.question_type for q in session.questions_asked}
         max_q = state.get("max_questions", 3)
         q_dict = _next_static_question(asked_types, max_q, len(session.questions_asked))
@@ -1531,16 +1531,16 @@ def _tool_loop_start(
             "quality_criteria": session.quality_criteria,
             "similar_episodes": similar_brief,
             "memory_hint": (
-                "Call loopllm_recall for more context on similar past runs."
+                "Call cdv_recall for more context on similar past runs."
                 if similar_brief
                 else "No similar episodes yet; this run will be recorded for next time."
             ),
             "guidance": (
                 f"Run up to ~{session.suggested_budget} step(s). After each step, "
-                f"call loopllm_loop_step with step_output=<artifact> (test log, diff, "
+                f"call cdv_loop_step with step_output=<artifact> (test log, diff, "
                 f"summary). The server runs Conservative Dual-Verify (deterministic "
                 f"checks + separate critic) — do NOT pass your own score. Stop when "
-                f"the verdict says 'stop', then call loopllm_loop_end."
+                f"the verdict says 'stop', then call cdv_loop_end."
             ),
         },
         indent=2,
@@ -1724,7 +1724,7 @@ def _tool_loop_resume(session_id: str | None = None) -> str:
 
     With ``session_id`` omitted, resumes the single active loop or returns an
     ambiguity list when several are pending. Rehydrates the in-memory session so
-    the next ``loopllm_loop_step`` succeeds.
+    the next ``cdv_loop_step`` succeeds.
     """
     controller = _get_agent_loop()
     episodic = _get_episodic()
@@ -1821,9 +1821,9 @@ def _tool_dag_compile(
     payload = scheduler.to_dict(run.run_id)
     payload["similar_episodes"] = recall
     payload["guidance"] = (
-        "Call loopllm_dag_ready, execute one frontier node, then "
-        "loopllm_dag_submit with step_output. Repeat until dag_complete, "
-        "then loopllm_dag_merge."
+        "Call cdv_dag_ready, execute one frontier node, then "
+        "cdv_dag_submit with step_output. Repeat until dag_complete, "
+        "then cdv_dag_merge."
     )
     return json.dumps(payload, indent=2, default=str)
 
@@ -1949,7 +1949,7 @@ def _tool_plan_update(
     """Update a task's prompt/output scores and recalculate plan confidence.
 
     Call this after:
-    - Scoring the task prompt with ``loopllm_intercept``
+    - Scoring the task prompt with ``cdv_intercept``
       → pass the ``quality_score`` as ``prompt_score``
     - Generating and verifying the task output
       → pass the evaluation score as ``output_score``
@@ -1961,8 +1961,8 @@ def _tool_plan_update(
     Args:
         plan_id: The plan to update.
         task_id: The task within the plan.
-        prompt_score: Prompt quality score (0–1) from loopllm_intercept.
-        output_score: Output quality score (0–1) from loopllm_verify_output.
+        prompt_score: Prompt quality score (0–1) from cdv_intercept.
+        output_score: Output quality score (0–1) from cdv_verify_output.
         mark_done: If True, mark the task DONE when confidence >= threshold,
             or REPLANNING when below it.
 
@@ -2089,7 +2089,7 @@ def _tool_plan_delete(plan_id: str) -> str:
 def _tool_gauge(prompt: str) -> str:
     """Instantly score a prompt and return a visual quality gauge.
 
-    Lighter than loopllm_intercept — no routing, no DB write, no elicitation.
+    Lighter than cdv_intercept — no routing, no DB write, no elicitation.
     Use this for a quick visual quality check of any prompt or draft.
 
     Returns a gauge like:  ████████░░ 82% [A]
@@ -2527,39 +2527,39 @@ def create_mcp_server() -> Any:
     except ImportError as exc:
         raise ImportError(
             "The mcp package is required for the MCP server. "
-            "Install it with: pip install loopllm[mcp]"
+            "Install it with: pip install cdv[mcp]"
         ) from exc
 
     mcp = FastMCP(
-        name="loopllm",
+        name="cdv",
         instructions=(
             "IMPORTANT: Before responding to ANY non-trivial user message, "
-            "you MUST first call loopllm_intercept with the user's message. "
+            "you MUST first call cdv_intercept with the user's message. "
             "This tool analyzes prompt quality and returns routing guidance "
             "you should follow. Do NOT skip this step.\n\n"
             "The intercept tool returns a quality gauge, routing recommendation "
             "(elicit/refine/decompose), and suggestions. Follow its guidance.\n\n"
             "DAG: for complex, multi-part goals (route=decompose), call "
-            "loopllm_dag_compile with a nodes array (id, role, description, "
-            "dependencies), then loop loopllm_dag_ready -> execute one frontier "
-            "node -> loopllm_dag_submit (CDV-verified) until dag_complete, then "
-            "loopllm_dag_merge.\n\n"
+            "cdv_dag_compile with a nodes array (id, role, description, "
+            "dependencies), then loop cdv_dag_ready -> execute one frontier "
+            "node -> cdv_dag_submit (CDV-verified) until dag_complete, then "
+            "cdv_dag_merge.\n\n"
             "For multi-step / iterative tasks (where you plan → act → observe → "
-            "repeat), drive the loop through loopllm_loop_start, then "
-            "loopllm_loop_step after each step with step_output=<artifact> "
+            "repeat), drive the loop through cdv_loop_start, then "
+            "cdv_loop_step after each step with step_output=<artifact> "
             "(test log, diff, summary). The server runs Conservative Dual-Verify: "
             "deterministic checks plus a separate critic call — do NOT self-grade. "
-            "Honor the continue/stop verdict, then call loopllm_loop_end.\n\n"
-            "MEMORY: after loopllm_intercept, for tasks similar to past work call "
-            "loopllm_recall(goal) before planning — loop_start also surfaces "
-            "similar_episodes automatically. On loopllm_loop_end the outcome is "
+            "Honor the continue/stop verdict, then call cdv_loop_end.\n\n"
+            "MEMORY: after cdv_intercept, for tasks similar to past work call "
+            "cdv_recall(goal) before planning — loop_start also surfaces "
+            "similar_episodes automatically. On cdv_loop_end the outcome is "
             "recorded to episodic memory for next time.\n\n"
-            "RECOVERY: if the IDE reloaded and loopllm_run_status shows an active "
-            "run, call loopllm_loop_resume before starting a new loop so the "
+            "RECOVERY: if the IDE reloaded and cdv_run_status shows an active "
+            "run, call cdv_loop_resume before starting a new loop so the "
             "in-progress loop continues instead of restarting cold.\n\n"
-            "After presenting results to the user, call loopllm_feedback with "
+            "After presenting results to the user, call cdv_feedback with "
             "the user's quality rating (1-5) to improve future predictions.\n\n"
-            "Periodically call loopllm_prompt_stats to show the user their "
+            "Periodically call cdv_prompt_stats to show the user their "
             "prompting quality trend and learning curve."
         ),
     )
@@ -2583,7 +2583,7 @@ def create_mcp_server() -> Any:
     # -- Routing & Prompt Engineering tools --
 
     @mcp.tool(
-        name="loopllm_intercept",
+        name="cdv_intercept",
         description=(
             "CALL THIS FIRST for any non-trivial request. Analyzes the user's "
             "prompt for quality (specificity, constraints, context, ambiguity, "
@@ -2597,7 +2597,7 @@ def create_mcp_server() -> Any:
         return _tool_intercept(prompt)
 
     @mcp.tool(
-        name="loopllm_prompt_stats",
+        name="cdv_prompt_stats",
         description=(
             "Show the user's prompting quality over time. Returns: total "
             "prompts analyzed, average quality score, trend direction "
@@ -2609,7 +2609,7 @@ def create_mcp_server() -> Any:
         return _tool_prompt_stats(window)
 
     @mcp.tool(
-        name="loopllm_feedback",
+        name="cdv_feedback",
         description=(
             "Record the user's quality rating (1-5) for the last output. "
             "Updates Bayesian priors with human signal so the system learns "
@@ -2626,7 +2626,7 @@ def create_mcp_server() -> Any:
     # -- Core tools --
 
     @mcp.tool(
-        name="loopllm_refine",
+        name="cdv_refine",
         description=(
             "Iteratively refine a prompt using MCP sampling to call the host agent "
             "mid-execution. Runs the score → rewrite → retry loop inline: each "
@@ -2665,9 +2665,9 @@ def create_mcp_server() -> Any:
         )
 
     @mcp.tool(
-        name="loopllm_run_pipeline",
+        name="cdv_run_pipeline",
         description=(
-            "Run the full loop-llm pipeline via MCP sampling: "
+            "Run the full cdv pipeline via MCP sampling: "
             "(1) elicit clarifying assumptions if prompt quality < 0.6, "
             "(2) decompose into subtasks if complexity > 0.5, "
             "(3) execute each subtask with a sampling call, "
@@ -2698,7 +2698,7 @@ def create_mcp_server() -> Any:
         )
 
     @mcp.tool(
-        name="loopllm_classify_task",
+        name="cdv_classify_task",
         description=(
             "Classify a user prompt into a task type: code_generation, "
             "summarization, data_extraction, question_answering, creative_writing, "
@@ -2713,7 +2713,7 @@ def create_mcp_server() -> Any:
         return _tool_classify_task(prompt, provider, model)
 
     @mcp.tool(
-        name="loopllm_analyze_prompt",
+        name="cdv_analyze_prompt",
         description=(
             "Analyze a prompt and generate clarifying questions ranked by "
             "expected information gain using Bayesian priors."
@@ -2730,7 +2730,7 @@ def create_mcp_server() -> Any:
     # -- Elicitation session tools --
 
     @mcp.tool(
-        name="loopllm_elicitation_start",
+        name="cdv_elicitation_start",
         description=(
             "Start a multi-turn elicitation session. Classifies the prompt, "
             "generates the first clarifying question, and returns a session_id."
@@ -2745,7 +2745,7 @@ def create_mcp_server() -> Any:
         return _tool_elicitation_start(prompt, provider, model, max_questions)
 
     @mcp.tool(
-        name="loopllm_elicitation_answer",
+        name="cdv_elicitation_answer",
         description=(
             "Answer the current clarifying question in an elicitation session."
         ),
@@ -2754,7 +2754,7 @@ def create_mcp_server() -> Any:
         return _tool_elicitation_answer(session_id, answer)
 
     @mcp.tool(
-        name="loopllm_elicitation_finish",
+        name="cdv_elicitation_finish",
         description=(
             "Finish an elicitation session and synthesize an IntentSpec."
         ),
@@ -2765,7 +2765,7 @@ def create_mcp_server() -> Any:
     # -- Task orchestration tools --
 
     @mcp.tool(
-        name="loopllm_plan_tasks",
+        name="cdv_plan_tasks",
         description=(
             "Decompose a prompt into subtasks with dependency ordering. "
             "Uses MCP sampling to call the host agent mid-execution and parse "
@@ -2788,7 +2788,7 @@ def create_mcp_server() -> Any:
         return _tool_plan_tasks(prompt, provider, model, estimated_complexity)
 
     @mcp.tool(
-        name="loopllm_verify_output",
+        name="cdv_verify_output",
         description=(
             "Verify an output against the original prompt and quality criteria. "
             "Runs a fast deterministic keyword pre-check, then calls ctx.sample() "
@@ -2817,7 +2817,7 @@ def create_mcp_server() -> Any:
     # -- Observability tools --
 
     @mcp.tool(
-        name="loopllm_report",
+        name="cdv_report",
         description=(
             "Show learned Bayesian priors and question effectiveness statistics."
         ),
@@ -2829,7 +2829,7 @@ def create_mcp_server() -> Any:
         return _tool_report(task_type, model_id)
 
     @mcp.tool(
-        name="loopllm_suggest_config",
+        name="cdv_suggest_config",
         description=(
             "Get a suggested loop configuration based on learned beliefs."
         ),
@@ -2844,12 +2844,12 @@ def create_mcp_server() -> Any:
     # -- Adaptive agent-loop tools --
 
     @mcp.tool(
-        name="loopllm_loop_start",
+        name="cdv_loop_start",
         description=(
             "Begin an ADAPTIVE AGENT LOOP for a multi-step task. Returns a learned "
             "step budget, quality threshold, and a Conservative Dual-Verify recipe "
             "(evaluator_type, quality_criteria). After each step submit step_output "
-            "to loopllm_loop_step — the server scores externally; do NOT self-grade."
+            "to cdv_loop_step — the server scores externally; do NOT self-grade."
         ),
     )
     def loop_start(
@@ -2880,7 +2880,7 @@ def create_mcp_server() -> Any:
         )
 
     @mcp.tool(
-        name="loopllm_loop_step",
+        name="cdv_loop_step",
         description=(
             "Submit ONE agent-loop step artifact for Conservative Dual-Verify "
             "scoring. Pass session_id and step_output (test log, diff, summary). "
@@ -2903,7 +2903,7 @@ def create_mcp_server() -> Any:
         )
 
     @mcp.tool(
-        name="loopllm_loop_end",
+        name="cdv_loop_end",
         description=(
             "Close an agent loop and LEARN from it. Call once the loop stops. "
             "Records the run (step scores, whether it converged) into the "
@@ -2916,7 +2916,7 @@ def create_mcp_server() -> Any:
         return _tool_loop_end(session_id, converged)
 
     @mcp.tool(
-        name="loopllm_loop_status",
+        name="cdv_loop_status",
         description=(
             "Inspect an active agent-loop session: steps used, suggested budget, "
             "score trajectory, and the last continue/stop verdict."
@@ -2926,10 +2926,10 @@ def create_mcp_server() -> Any:
         return _tool_loop_status(session_id)
 
     @mcp.tool(
-        name="loopllm_recall",
+        name="cdv_recall",
         description=(
             "Recall similar past episodes (completed loops/plans) by keyword "
-            "search over goal, summary, and tags in ~/.loopllm/store.db."
+            "search over goal, summary, and tags in ~/.cdv/store.db."
         ),
     )
     def recall(
@@ -2940,7 +2940,7 @@ def create_mcp_server() -> Any:
         return _tool_recall(query, task_type, k)
 
     @mcp.tool(
-        name="loopllm_run_status",
+        name="cdv_run_status",
         description=(
             "Return active agent-loop, plan, and DAG run snapshots for IDE "
             "reload recovery after a crash or MCP server restart."
@@ -2950,20 +2950,20 @@ def create_mcp_server() -> Any:
         return _tool_run_status()
 
     @mcp.tool(
-        name="loopllm_loop_resume",
+        name="cdv_loop_resume",
         description=(
             "Resume an in-progress agent loop after an IDE reload or MCP restart. "
-            "Rehydrates the loop's verified state so the next loopllm_loop_step "
+            "Rehydrates the loop's verified state so the next cdv_loop_step "
             "continues where it left off. Omit session_id to resume the only "
             "active loop (or get an ambiguity list). Call this when "
-            "loopllm_run_status shows an active run before starting a new loop."
+            "cdv_run_status shows an active run before starting a new loop."
         ),
     )
     def loop_resume(session_id: str | None = None) -> str:
         return _tool_loop_resume(session_id)
 
     @mcp.tool(
-        name="loopllm_dag_compile",
+        name="cdv_dag_compile",
         description=(
             "Compile a DAG of virtual sub-agent nodes for complex multi-step work. "
             "Pass goal and nodes array (id, role, description, dependencies). "
@@ -2980,7 +2980,7 @@ def create_mcp_server() -> Any:
         return _tool_dag_compile(goal, nodes, task_type, model_id)
 
     @mcp.tool(
-        name="loopllm_dag_ready",
+        name="cdv_dag_ready",
         description=(
             "Return frontier DAG nodes whose dependencies are verified, with "
             "scoped worker prompts and inputs from completed nodes."
@@ -2990,7 +2990,7 @@ def create_mcp_server() -> Any:
         return _tool_dag_ready(run_id)
 
     @mcp.tool(
-        name="loopllm_dag_submit",
+        name="cdv_dag_submit",
         description=(
             "Submit a DAG node step artifact for CDV scoring. Marks node "
             "verified or failed; unlocks dependent nodes when accepted."
@@ -3005,14 +3005,14 @@ def create_mcp_server() -> Any:
         return await _tool_dag_submit(run_id, node_id, step_output, ctx)
 
     @mcp.tool(
-        name="loopllm_dag_status",
+        name="cdv_dag_status",
         description="Full DAG graph state: node states, scores, ready frontier.",
     )
     def dag_status(run_id: str) -> str:
         return _tool_dag_status(run_id)
 
     @mcp.tool(
-        name="loopllm_dag_merge",
+        name="cdv_dag_merge",
         description=(
             "Merge verified DAG node outputs in topological order. "
             "Call when all nodes are verified."
@@ -3022,7 +3022,7 @@ def create_mcp_server() -> Any:
         return _tool_dag_merge(run_id)
 
     @mcp.tool(
-        name="loopllm_list_tasks",
+        name="cdv_list_tasks",
         description="List tasks from the persistent store.",
     )
     def list_tasks(
@@ -3032,7 +3032,7 @@ def create_mcp_server() -> Any:
         return _tool_list_tasks(state, limit)
 
     @mcp.tool(
-        name="loopllm_show_task",
+        name="cdv_show_task",
         description="Show detailed information about a specific task by ID.",
     )
     def show_task(task_id: str) -> str:
@@ -3041,11 +3041,11 @@ def create_mcp_server() -> Any:
     # -- Plan Registry tools --
 
     @mcp.tool(
-        name="loopllm_plan_register",
+        name="cdv_plan_register",
         description=(
             "Create a new confidence-tracked plan in the PlanRegistry. "
             "Pass a goal and list of tasks (each with title + description). "
-            "Returns a plan_id to use with loopllm_plan_update and loopllm_plan_next. "
+            "Returns a plan_id to use with cdv_plan_update and cdv_plan_next. "
             "The plan tracks rolling_confidence aggregated from all task scores "
             "and flags needs_replan=true when confidence drops below the threshold."
         ),
@@ -3058,14 +3058,14 @@ def create_mcp_server() -> Any:
         return _tool_plan_register(goal, tasks, confidence_threshold)
 
     @mcp.tool(
-        name="loopllm_plan_update",
+        name="cdv_plan_update",
         description=(
             "Update a task's prompt_score and/or output_score, then recalculate "
             "the plan's rolling_confidence. "
-            "Pass prompt_score from loopllm_intercept's quality_score field. "
-            "Pass output_score from loopllm_verify_output's score field. "
+            "Pass prompt_score from cdv_intercept's quality_score field. "
+            "Pass output_score from cdv_verify_output's score field. "
             "Returns the updated plan with rolling_confidence and needs_replan flag. "
-            "If needs_replan=true, refine the current task before calling loopllm_plan_next."
+            "If needs_replan=true, refine the current task before calling cdv_plan_next."
         ),
     )
     def plan_update(
@@ -3078,11 +3078,11 @@ def create_mcp_server() -> Any:
         return _tool_plan_update(plan_id, task_id, prompt_score, output_score, mark_done)
 
     @mcp.tool(
-        name="loopllm_plan_next",
+        name="cdv_plan_next",
         description=(
             "Get the next pending task in a plan and mark it in_progress. "
             "Returns the task description, current rolling_confidence, and "
-            "needs_replan flag. If needs_replan=true, run loopllm_refine on the "
+            "needs_replan flag. If needs_replan=true, run cdv_refine on the "
             "task description before executing it. Returns done=true when all "
             "tasks are complete."
         ),
@@ -3091,7 +3091,7 @@ def create_mcp_server() -> Any:
         return _tool_plan_next(plan_id)
 
     @mcp.tool(
-        name="loopllm_plan_list",
+        name="cdv_plan_list",
         description=(
             "List all active plans with gauge, confidence, task counts by status, "
             "and next pending task. Gives a Shrimp-style overview of all ongoing work. "
@@ -3102,7 +3102,7 @@ def create_mcp_server() -> Any:
         return _tool_plan_list()
 
     @mcp.tool(
-        name="loopllm_plan_delete",
+        name="cdv_plan_delete",
         description=(
             "Delete a plan from the registry and persistent store. "
             "Use when a plan is complete or abandoned."
@@ -3112,10 +3112,10 @@ def create_mcp_server() -> Any:
         return _tool_plan_delete(plan_id)
 
     @mcp.tool(
-        name="loopllm_gauge",
+        name="cdv_gauge",
         description=(
             "Instantly score a prompt and return a visual quality gauge. "
-            "Lighter than loopllm_intercept — no routing, no DB write, no elicitation. "
+            "Lighter than cdv_intercept — no routing, no DB write, no elicitation. "
             "Use this for a quick visual quality check of any prompt or draft. "
             "Returns a gauge like: ████████░░ 82% [A] plus per-dimension bars and suggestions."
         ),
@@ -3124,7 +3124,7 @@ def create_mcp_server() -> Any:
         return _tool_gauge(prompt)
 
     @mcp.tool(
-        name="loopllm_context_history",
+        name="cdv_context_history",
         description=(
             "Browse your prompt quality history with visual gauges. "
             "Returns recent prompts with their scores, grades, and gauges so you can "
@@ -3140,7 +3140,7 @@ def create_mcp_server() -> Any:
         return _tool_context_history(limit, session_context, min_score)
 
     @mcp.tool(
-        name="loopllm_context_clear",
+        name="cdv_context_clear",
         description=(
             "Clear stored prompt history. Wipes all (or session-scoped) prompt history "
             "from the local DB. Use this to reset your quality baseline at the start of "

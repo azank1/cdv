@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from loopllm.engine import ExitReason
-from loopllm.priors import AdaptivePriors
+from cdv.engine import ExitReason
+from cdv.priors import AdaptivePriors
 
 
 @dataclass

@@ -1,13 +1,13 @@
-"""Tests for `loopllm audit --export` and `loopllm audit-gate`."""
+"""Tests for `cdv audit --export` and `cdv audit-gate`."""
 from __future__ import annotations
 
 import json
 import subprocess
 from pathlib import Path
 
-from loopllm.cli import build_parser
-from loopllm.episodes import EpisodicStore
-from loopllm.store import LoopStore
+from cdv.cli import build_parser
+from cdv.episodes import EpisodicStore
+from cdv.store import LoopStore
 
 
 def _run(args: list[str]) -> int:
@@ -51,7 +51,7 @@ def test_audit_export_writes_portable_artifact(tmp_path: Path, capsys) -> None:
     store.close()
     capsys.readouterr()
 
-    export_path = tmp_path / ".loopllm" / "audit.json"
+    export_path = tmp_path / ".cdv" / "audit.json"
     _run(["--db", str(db), "audit", "--export", str(export_path)])
 
     artifact = json.loads(export_path.read_text())
@@ -81,7 +81,7 @@ def test_audit_export_respects_since_filter(tmp_path: Path, capsys, monkeypatch)
     capsys.readouterr()
 
     monkeypatch.chdir(repo)
-    export_path = repo / ".loopllm" / "audit.json"
+    export_path = repo / ".cdv" / "audit.json"
     _run(["--db", str(db), "audit", "--since", sha_before, "--export", str(export_path)])
 
     artifact = json.loads(export_path.read_text())
@@ -133,7 +133,7 @@ def test_gate_passes_when_all_commits_verified(tmp_path: Path, capsys, monkeypat
     store.close()
     capsys.readouterr()
 
-    artifact_path = repo / ".loopllm" / "audit.json"
+    artifact_path = repo / ".cdv" / "audit.json"
     monkeypatch.chdir(repo)
     _run(["--db", str(db), "audit", "--since", base_sha, "--export", str(artifact_path)])
     capsys.readouterr()
@@ -163,7 +163,7 @@ def test_gate_min_score_fails_below_threshold(tmp_path: Path, capsys, monkeypatc
     store.close()
     capsys.readouterr()
 
-    artifact_path = repo / ".loopllm" / "audit.json"
+    artifact_path = repo / ".cdv" / "audit.json"
     monkeypatch.chdir(repo)
     _run(["--db", str(db), "audit", "--since", base_sha, "--export", str(artifact_path)])
     capsys.readouterr()

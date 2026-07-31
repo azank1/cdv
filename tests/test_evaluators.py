@@ -1,7 +1,7 @@
 """Tests for built-in evaluators."""
 from __future__ import annotations
 
-from loopllm.evaluators import (
+from cdv.evaluators import (
     JSONSchemaEvaluator,
     LengthEvaluator,
     RegexEvaluator,

@@ -4,12 +4,12 @@ Instead of the local model calling MCP tools itself, this module wraps any
 local LLM call with a scoring middleware layer:
 
 1. Send prompt → local model → get output
-2. POST output to loopllm /score endpoint
+2. POST output to cdv /score endpoint
 3. Receive score + weighted prompt rewrite
 4. If score < threshold, re-submit rewritten prompt to local model
 5. Repeat until score >= threshold or max_retries exhausted
 
-The local model never needs to support tool-calling or MCP.  loopllm acts
+The local model never needs to support tool-calling or MCP.  cdv acts
 purely as a prompt optimizer and quality gate that sits between the caller
 and the model.
 
@@ -60,12 +60,12 @@ class LocalLoopResult:
 
 
 class LocalModelLoop:
-    """Wraps any local HTTP LLM (Ollama-compatible) with loopllm scoring.
+    """Wraps any local HTTP LLM (Ollama-compatible) with cdv scoring.
 
     Args:
         base_url: Base URL of the local model API (Ollama default: http://localhost:11434).
         model: Model name (e.g. "llama3.2", "qwen2.5:0.5b").
-        score_url: URL of the loopllm score endpoint (loopllm serve default: http://localhost:8765/score).
+        score_url: URL of the cdv score endpoint (cdv serve default: http://localhost:8765/score).
         quality_threshold: Minimum score to accept a response without retrying.
         max_retries: Maximum number of retry iterations.
         timeout: HTTP timeout in seconds for model calls.
@@ -108,7 +108,7 @@ class LocalModelLoop:
         Args:
             prompt: The initial user prompt.
             system: Optional system message.
-            evaluator_type: Scoring evaluator type passed to loopllm ('length', 'json', 'regex').
+            evaluator_type: Scoring evaluator type passed to cdv ('length', 'json', 'regex').
             min_words: Minimum word count evaluator argument.
             **kwargs: Extra keyword args forwarded to the model API.
 
@@ -128,7 +128,7 @@ class LocalModelLoop:
             output = self._call_model(current_prompt, system=system, **kwargs)
             latency_ms = (time.perf_counter() - iter_start) * 1000.0
 
-            # 2. Score via loopllm
+            # 2. Score via cdv
             score_result = self._score(
                 prompt=current_prompt,
                 output=output,
@@ -217,7 +217,7 @@ class LocalModelLoop:
         evaluator_type: str = "length",
         min_words: int = 5,
     ) -> dict[str, Any]:
-        """POST to loopllm /score and return the score dict."""
+        """POST to cdv /score and return the score dict."""
         try:
             import httpx
         except ImportError as e:
@@ -240,7 +240,7 @@ class LocalModelLoop:
             resp.raise_for_status()
             return cast(dict[str, Any], resp.json())
         except Exception:
-            # If loopllm serve is unreachable, use a simple word-count fallback
+            # If cdv serve is unreachable, use a simple word-count fallback
             words = len(output.split())
             score = min(1.0, words / max(min_words, 1))
             return {
@@ -263,7 +263,7 @@ class LocalModelLoop:
             else "  - Output did not meet quality threshold"
         )
         return (
-            f"[LOOPLLM | score={score:.2f} | retry={iteration}/{self.max_retries} | "
+            f"[CDV | score={score:.2f} | retry={iteration}/{self.max_retries} | "
             f"threshold={self.quality_threshold:.2f}]\n"
             f"Your previous response scored {score:.2f}/1.0 and did not meet the quality bar.\n"
             f"Issues to fix:\n{deficiency_str}\n\n"

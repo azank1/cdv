@@ -14,7 +14,7 @@ from typing import Any
 
 import structlog
 
-from loopllm.guards import (
+from cdv.guards import (
     CONVERGENCE_DELTA,
     MAX_STEPS_DEFAULT,
     AgentLoopGuard,
@@ -22,7 +22,7 @@ from loopllm.guards import (
     GuardStack,
     default_guard_stack,
 )
-from loopllm.priors import AdaptivePriors, CallObservation
+from cdv.priors import AdaptivePriors, CallObservation
 
 logger = structlog.get_logger(__name__)
 

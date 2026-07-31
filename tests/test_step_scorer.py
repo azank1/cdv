@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from loopllm.evaluator_factory import build_evaluator
-from loopllm.step_scorer import (
+from cdv.evaluator_factory import build_evaluator
+from cdv.step_scorer import (
     conservative_dual_verify,
     keyword_criteria_score,
     legacy_self_report_score,

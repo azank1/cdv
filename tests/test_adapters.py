@@ -1,7 +1,7 @@
 """Tests for the framework-agnostic AdaptiveStopper."""
 from __future__ import annotations
 
-from loopllm import AdaptivePriors, AdaptiveStopper
+from cdv import AdaptivePriors, AdaptiveStopper
 
 
 def test_stops_when_supplied_score_meets_threshold() -> None:

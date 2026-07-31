@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from loopllm.provider import LLMProvider, LLMResponse, LLMUsage
+from cdv.provider import LLMProvider, LLMResponse, LLMUsage
 
 
 @dataclass

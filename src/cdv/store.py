@@ -13,7 +13,7 @@ from typing import Any, cast, Iterator
 
 import structlog
 
-from loopllm.priors import (
+from cdv.priors import (
     AdaptivePriors,
     BetaPrior,
     CallObservation,
@@ -190,7 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_episodes_recorded ON episodes(recorded_at);
 """
 
 # v6: link episodes to the git commit that was HEAD when they were recorded,
-# so `loopllm audit` can build a verification trail scoped to a commit range.
+# so `cdv audit` can build a verification trail scoped to a commit range.
 _SCHEMA_V6_SQL = """\
 ALTER TABLE episodes ADD COLUMN commit_sha TEXT;
 
@@ -199,7 +199,7 @@ CREATE INDEX IF NOT EXISTS idx_episodes_commit_sha ON episodes(commit_sha);
 
 
 class LoopStore:
-    """SQLite-backed store for loop-llm state.
+    """SQLite-backed store for cdv state.
 
     Thread-safe via a reentrant lock around all database operations.
     Uses WAL journal mode for concurrent read performance.

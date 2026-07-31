@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from loopllm.priors import (
+from cdv.priors import (
     BetaPrior,
     CallObservation,
     IterationProfile,
     NormalPrior,
     TaskModelPrior,
 )
-from loopllm.store import LoopStore, SQLiteBackedPriors
+from cdv.store import LoopStore, SQLiteBackedPriors
 
 
 @pytest.fixture()

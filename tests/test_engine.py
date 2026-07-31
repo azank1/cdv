@@ -1,9 +1,9 @@
 """Tests for the core engine module."""
 from __future__ import annotations
 
-from loopllm import LoopConfig, LoopedLLM
-from loopllm.engine import CompositeEvaluator, EvaluationResult
-from loopllm.providers.mock import MockLLMProvider
+from cdv import LoopConfig, LoopedLLM
+from cdv.engine import CompositeEvaluator, EvaluationResult
+from cdv.providers.mock import MockLLMProvider
 
 
 class _PassEvaluator:

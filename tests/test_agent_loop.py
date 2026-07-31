@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from loopllm import AdaptivePriors, AgentLoopController, CallObservation
+from cdv import AdaptivePriors, AgentLoopController, CallObservation
 
 
 def _seed(priors: AdaptivePriors, task_type: str, scores: list[float], n: int = 12) -> None:

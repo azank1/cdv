@@ -13,8 +13,8 @@ from typing import Any
 
 import structlog
 
-from loopllm.priors import AdaptivePriors, BetaPrior
-from loopllm.provider import LLMProvider, LLMResponse
+from cdv.priors import AdaptivePriors, BetaPrior
+from cdv.provider import LLMProvider, LLMResponse
 
 logger = structlog.get_logger(__name__)
 

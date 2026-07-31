@@ -1,35 +1,35 @@
-"""REST API server exposing loopllm scoring to local models.
+"""REST API server exposing cdv scoring to local models.
 
 Starts a lightweight HTTP server (FastAPI + uvicorn) that exposes:
 
   POST /score          — score a prompt+output pair, return quality metrics
   POST /rewrite        — score + return a rewritten prompt if below threshold
-  GET  /intercept      — run loopllm_intercept on a prompt
+  GET  /intercept      — run cdv_intercept on a prompt
   POST /plan/register  — create a new plan in the PlanRegistry
   POST /plan/update    — update task scores and get confidence status
   GET  /plan/{plan_id} — get full plan status
   GET  /health         — health check
 
 This is the bridge that lets local models (Ollama, llama.cpp, LM Studio)
-use loopllm as a scoring middleware without needing MCP tool-calling support.
+use cdv as a scoring middleware without needing MCP tool-calling support.
 
 Usage::
 
-    loopllm serve --host 0.0.0.0 --port 8765
+    cdv serve --host 0.0.0.0 --port 8765
 """
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from loopllm.logging_config import configure_logging
-from loopllm.mcp_server import (
+from cdv.logging_config import configure_logging
+from cdv.mcp_server import (
     _init_state,
     _score_prompt_quality,
     _build_evaluator,
     _tool_intercept,
 )
-from loopllm.plan_registry import get_registry
+from cdv.plan_registry import get_registry
 
 
 # ---------------------------------------------------------------------------
@@ -48,13 +48,13 @@ def _get_app() -> Any:
         from pydantic import BaseModel
     except ImportError as exc:
         raise ImportError(
-            "FastAPI and uvicorn are required for `loopllm serve`.\n"
-            "Install with: pip install loopllm[serve]"
+            "FastAPI and uvicorn are required for `cdv serve`.\n"
+            "Install with: pip install cdv[serve]"
         ) from exc
 
     _init_state()
     app = FastAPI(
-        title="loopllm scoring API",
+        title="cdv scoring API",
         description=(
             "Quality scoring and prompt optimization middleware for local LLMs. "
             "POST your prompt+output to /score to get quality metrics and a "
@@ -107,7 +107,7 @@ def _get_app() -> Any:
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "service": "loopllm"}
+        return {"status": "ok", "service": "cdv"}
 
     @app.post("/score")
     def score(req: ScoreRequest) -> JSONResponse:
@@ -176,7 +176,7 @@ def _get_app() -> Any:
                 else "  - Output did not meet quality threshold"
             )
             rewritten = (
-                f"[LOOPLLM | score={combined:.2f} | "
+                f"[CDV | score={combined:.2f} | "
                 f"retry={req.iteration + 1}/{req.max_retries} | "
                 f"threshold={req.quality_threshold:.2f}]\n"
                 f"Your previous response scored {combined:.2f}/1.0.\n"
@@ -200,7 +200,7 @@ def _get_app() -> Any:
 
     @app.post("/intercept")
     def intercept(req: InterceptRequest) -> JSONResponse:
-        """Run loopllm_intercept on a prompt (same as the MCP tool)."""
+        """Run cdv_intercept on a prompt (same as the MCP tool)."""
         result = _tool_intercept(req.prompt)
         return JSONResponse(json.loads(result))
 
@@ -270,7 +270,7 @@ def _get_app() -> Any:
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8765, reload: bool = False) -> None:
-    """Start the loopllm scoring REST server.
+    """Start the cdv scoring REST server.
 
     Args:
         host: Bind address.
@@ -282,15 +282,15 @@ def run_server(host: str = "127.0.0.1", port: int = 8765, reload: bool = False) 
         import uvicorn
     except ImportError as exc:
         raise ImportError(
-            "uvicorn is required for `loopllm serve`.\n"
-            "Install with: pip install loopllm[serve]"
+            "uvicorn is required for `cdv serve`.\n"
+            "Install with: pip install cdv[serve]"
         ) from exc
 
     # Build the app once to surface import errors before uvicorn starts
     _get_app()
 
     uvicorn.run(
-        "loopllm.serve:_get_app",
+        "cdv.serve:_get_app",
         factory=True,
         host=host,
         port=port,

@@ -1,11 +1,11 @@
-"""Shared fixtures for loop-llm tests."""
+"""Shared fixtures for cdv tests."""
 from __future__ import annotations
 
 import pytest
 
-from loopllm import AdaptivePriors, CallObservation, LoopConfig
-from loopllm.providers.mock import MockLLMProvider
-from loopllm.store import LoopStore
+from cdv import AdaptivePriors, CallObservation, LoopConfig
+from cdv.providers.mock import MockLLMProvider
+from cdv.store import LoopStore
 
 
 @pytest.fixture

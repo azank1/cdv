@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-import loopllm.mcp_server as m
-from loopllm import AdaptivePriors, AgentLoopController
+import cdv.mcp_server as m
+from cdv import AdaptivePriors, AgentLoopController
 
 
 # -- controller-level recovery contract (pure, no module globals) ------------
@@ -50,8 +50,8 @@ def test_hydrate_skips_closed_and_non_loop_runs() -> None:
 
 @pytest.fixture
 def mcp_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("LOOPLLM_DB", str(tmp_path / "store.db"))
-    monkeypatch.setenv("LOOPLLM_PROVIDER", "mock")
+    monkeypatch.setenv("CDV_DB", str(tmp_path / "store.db"))
+    monkeypatch.setenv("CDV_PROVIDER", "mock")
     for g in (
         "_store", "_priors", "_provider", "_episodic", "_agent_loop",
         "_dag_scheduler", "_status_path", "_history_path", "_consultation_path",
@@ -279,7 +279,7 @@ def test_tool_dag_compile_ready_submit_status_merge(mcp_env) -> None:
 
 
 def test_consultation_signal_written_by_entry_point_tools(mcp_env) -> None:
-    """The 'was PromptLoop consulted' file updates on real entry points, not passive reads."""
+    """The 'was CDV consulted' file updates on real entry points, not passive reads."""
     env = mcp_env
     env._init_state()
     consultation_path = env._consultation_path
@@ -311,8 +311,8 @@ def test_server_registers_expected_tool_count(mcp_env) -> None:
     tools = asyncio.run(server.list_tools())
     names = {t.name for t in tools}
     assert len(names) == 36
-    assert {"loopllm_recall", "loopllm_run_status", "loopllm_loop_resume"} <= names
+    assert {"cdv_recall", "cdv_run_status", "cdv_loop_resume"} <= names
     assert {
-        "loopllm_dag_compile", "loopllm_dag_ready", "loopllm_dag_submit",
-        "loopllm_dag_status", "loopllm_dag_merge",
+        "cdv_dag_compile", "cdv_dag_ready", "cdv_dag_submit",
+        "cdv_dag_status", "cdv_dag_merge",
     } <= names

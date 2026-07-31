@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from loopllm.dag_scheduler import DagScheduler
-from loopllm.episodes import EpisodicStore
-from loopllm.store import LoopStore
+from cdv.dag_scheduler import DagScheduler
+from cdv.episodes import EpisodicStore
+from cdv.store import LoopStore
 
 
 @pytest.fixture
