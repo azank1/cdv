@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or improvement for loopllm
+about: Suggest an idea or improvement for cdv
 title: "feat: "
 labels: enhancement
 ---

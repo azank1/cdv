@@ -25,7 +25,7 @@ export interface ScorePayload {
 }
 
 export class PromptLabProvider implements vscode.WebviewViewProvider {
-  public static readonly viewId = "loopllm.promptLab";
+  public static readonly viewId = "cdv.promptLab";
 
   private _view?: vscode.WebviewView;
   private _dbPath: string;
@@ -73,7 +73,7 @@ export class PromptLabProvider implements vscode.WebviewViewProvider {
     }
 
     // VS Code child processes get a minimal PATH that often excludes the
-    // Python env bin dir. Augment with common locations so loopllm is found.
+    // Python env bin dir. Augment with common locations so cdv is found.
     const home = process.env.HOME ?? "";
     const extraPaths = [
       `${home}/.local/bin`,
@@ -88,14 +88,14 @@ export class PromptLabProvider implements vscode.WebviewViewProvider {
 
     const args = ["--db", this._dbPath, "score", "--json", trimmed.slice(0, 3000)];
 
-    cp.execFile("loopllm", args, { timeout: 8000, env }, (err, stdout) => {
+    cp.execFile("cdv", args, { timeout: 8000, env }, (err, stdout) => {
       if (!err) { this._parseAndPost(stdout); return; }
 
-      // Fallback 1: python3 -m loopllm
-      cp.execFile("python3", ["-m", "loopllm", ...args], { timeout: 8000, env }, (err2, stdout2) => {
+      // Fallback 1: python3 -m cdv
+      cp.execFile("python3", ["-m", "cdv", ...args], { timeout: 8000, env }, (err2, stdout2) => {
         if (!err2) { this._parseAndPost(stdout2); return; }
 
-        this._post({ type: "error", message: "loopllm not found — run: pipx install -e '.[mcp]' in the repo root" });
+        this._post({ type: "error", message: "cdv not found — run: pipx install -e '.[mcp]' in the repo root" });
       });
     });
   }

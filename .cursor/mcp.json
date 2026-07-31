@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "loopllm": {
-      "command": "loopllm",
+    "cdv": {
+      "command": "cdv",
       "args": ["mcp-server", "--provider", "agent"],
       "env": {
-        "LOOPLLM_MODEL": "agent"
+        "CDV_MODEL": "agent"
       }
     }
   }

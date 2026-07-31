@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate .github/assets/dag-board.gif from real loopllm_dag_* tool calls.
+"""Generate .github/assets/dag-board.gif from real cdv_dag_* tool calls.
 
 Same approach as generate_cdv_gif.py: call the actual MCP tool functions (no
 network, no LLM) and render the resulting DagRun state as a kanban-style
 board — the same Pending/Ready/Running/Verified/Failed columns the VS Code
-Loop Monitor renders from src/loopllm/dag_scheduler.py's to_dict() output.
+Loop Monitor renders from src/cdv/dag_scheduler.py's to_dict() output.
 
 Requires Pillow: pip install pillow
 Run from repo root: python scripts/generate_dag_board_gif.py
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-os.environ.setdefault("LOOPLLM_PROVIDER", "mock")
+os.environ.setdefault("CDV_PROVIDER", "mock")
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / ".github" / "assets" / "dag-board.gif"
@@ -59,9 +59,9 @@ def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.I
 async def _collect_frames() -> list[dict]:
     """Drive a real 2-node DAG run through mcp_server's tool functions."""
     db_path = Path(tempfile.mkdtemp()) / "store.db"
-    os.environ["LOOPLLM_DB"] = str(db_path)
+    os.environ["CDV_DB"] = str(db_path)
 
-    from loopllm import mcp_server as m
+    from cdv import mcp_server as m
 
     compiled = json.loads(m._tool_dag_compile(
         "refactor download() and pass tests",
@@ -105,7 +105,7 @@ def _render_frame(state: dict, width: int = 860, height: int = 380) -> Image.Ima
     small_font = _font(10)
 
     draw.rectangle((10, 10, width - 10, height - 10), fill=PANEL, outline=BORDER, width=1)
-    draw.text((22, 18), "PromptLoop · DAG Runs (agent scrum-master)", fill=MUTED, font=title_font)
+    draw.text((22, 18), "CDV · DAG Runs (agent scrum-master)", fill=MUTED, font=title_font)
     goal = state.get("goal", "")[:80]
     draw.text((22, 42), goal, fill=GOAL, font=node_font)
 
@@ -132,7 +132,7 @@ def _render_frame(state: dict, width: int = 860, height: int = 380) -> Image.Ima
                     draw.text((x + 8, y + 56), deficiencies[0][:26], fill=(200, 120, 120), font=small_font)
             y += card_h + 8
 
-    draw.text((22, height - 26), "Conservative Dual-Verify per node · loopllm", fill=MUTED, font=small_font)
+    draw.text((22, height - 26), "Conservative Dual-Verify per node · cdv", fill=MUTED, font=small_font)
     return img
 
 

@@ -1,5 +1,5 @@
 /**
- * Watches ~/.loopllm/status.json for changes written by the MCP server.
+ * Watches ~/.cdv/status.json for changes written by the MCP server.
  * Provides near-real-time updates without database polling.
  */
 

@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-07-23
+
+### Changed
+- **Rebrand: loopllm/PromptLoop → CDV ("the judge for AI coding agents").**
+  No functional changes — tool behavior, scoring, and the SQLite schema (v6)
+  are identical — but every public surface was renamed:
+  - **PyPI package**: `loopllm` → `cdv` (`pipx install "cdv[mcp]"`). The old
+    `loopllm` releases stay on PyPI untouched.
+  - **CLI**: `loopllm` → `cdv` (e.g. `cdv score`, `cdv install-mcp`,
+    `cdv audit-gate`); `python -m loopllm` → `python -m cdv`.
+  - **Python import**: `loopllm` → `cdv` (`from cdv import ...`). Public API
+    symbol names (`AdaptivePriors`, `AgentLoopController`, `AdaptiveStopper`,
+    …) are unchanged.
+  - **MCP tools**: all 36 `loopllm_*` tools → `cdv_*` (prefix swap only);
+    the MCP server name is now `cdv`.
+  - **Environment variables**: `LOOPLLM_*` → `CDV_*` (`CDV_PROVIDER`,
+    `CDV_MODEL`, `CDV_DB`, `CDV_PROJECT`, `CDV_WORKSPACE`, `CDV_LOG_LEVEL`).
+  - **State directory**: `~/.loopllm/` → `~/.cdv/` (per-project stores under
+    `~/.cdv/projects/<id>/store.db`).
+  - **Audit artifact**: `.loopllm/audit.json` → `.cdv/audit.json`; the
+    `audit-gate --artifact` default moved with it.
+  - **Agent-rules files**: `cdv install-mcp --rules` now writes
+    `.cursor/rules/cdv.mdc` and `.github/instructions/cdv.instructions.md`.
+  - **VS Code extension**: new id `cdv-judge` (replaces `loopllm-prompt-gauge`),
+    display name "CDV — Judge for AI Coding Agents"; commands and settings
+    moved from `loopllm.*` to `cdv.*`. Marketplace publisher stays `loopllm`
+    (publisher IDs can't change).
+  - **GitHub repo**: `azank1/loop-llm` → `azank1/cdv` (old URLs redirect).
+- `cdv migrate-legacy` is unchanged in behavior: it still imports the
+  pre-v0.10 flat global store from `~/.loopllm/store.db` — that path is the
+  *legacy source* being migrated from and intentionally keeps the old name.
+
 ## [0.11.0] — 2026-07-23
 
 ### Added

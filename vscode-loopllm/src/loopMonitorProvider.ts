@@ -1,10 +1,10 @@
 /**
- * Loop Monitor — sidebar panel for PromptLoop
+ * Loop Monitor — sidebar panel for CDV
  *
  * The "agent scrum-master" board. Shows:
  *   • DAG runs as a dependency board — one card per node, colored by
  *     verification state, with the plain-language reason a node failed CDV
- *     (from ~/.loopllm/projects/<id>/active_runs/*.json, run_type="dag")
+ *     (from ~/.cdv/projects/<id>/active_runs/*.json, run_type="dag")
  *   • Active agent-loop sessions (same directory, run_type="agent_loop")
  *   • Recently completed episodes (from episodes_feed.json)
  *
@@ -17,7 +17,7 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 
-/** Build a PATH that includes common loopllm install locations (mirrors extension.ts). */
+/** Build a PATH that includes common cdv install locations (mirrors extension.ts). */
 function buildEnv(): NodeJS.ProcessEnv {
   const home = process.env.HOME ?? "";
   const extras = [
@@ -99,17 +99,17 @@ interface ConsultationRecord {
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 export class LoopMonitorProvider implements vscode.WebviewViewProvider {
-  public static readonly viewId = "loopllm.loopMonitor";
+  public static readonly viewId = "cdv.loopMonitor";
 
   private _view?: vscode.WebviewView;
-  private readonly _loopllmDir: string;
+  private readonly _cdvDir: string;
   private readonly _dbPath: string;
   private readonly _activationTime = Date.now();
   private _hasEditActivity = false;
 
   constructor(dbPath: string) {
     this._dbPath = dbPath;
-    this._loopllmDir = path.dirname(dbPath);
+    this._cdvDir = path.dirname(dbPath);
   }
 
   /**
@@ -139,19 +139,19 @@ export class LoopMonitorProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Run `loopllm audit` for the board's own project db and open the
+   * Run `cdv audit` for the board's own project db and open the
    * human-readable verification trail in a new editor tab — the "team
    * artifact" a reviewer can read or save (Cmd+S) independent of the IDE.
    */
   private _exportAuditReport(): void {
     cp.execFile(
-      "loopllm",
+      "cdv",
       ["--db", this._dbPath, "audit"],
       { timeout: 10000, env: buildEnv(), maxBuffer: 5 * 1024 * 1024 },
       async (err, stdout, stderr) => {
         const body = err
-          ? `# PromptLoop Verification Audit\n\nFailed to run \`loopllm audit\`: ${err.message}\n\n${stderr}`
-          : `# PromptLoop Verification Audit\n\n\`\`\`\n${stdout.trim()}\n\`\`\`\n`;
+          ? `# CDV Verification Audit\n\nFailed to run \`cdv audit\`: ${err.message}\n\n${stderr}`
+          : `# CDV Verification Audit\n\n\`\`\`\n${stdout.trim()}\n\`\`\`\n`;
         const doc = await vscode.workspace.openTextDocument({
           content: body,
           language: "markdown",
@@ -171,11 +171,11 @@ export class LoopMonitorProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * The "PromptLoop not consulted this session" signal: true only when the
+   * The "CDV not consulted this session" signal: true only when the
    * user has actually been editing (markEditActivity) AND no entry-point
    * tool (intercept / loop_start / loop_step / dag_compile / dag_submit) has
    * fired since this panel activated. A fresh, untouched workspace or a
-   * session that genuinely called loopllm never shows the banner.
+   * session that genuinely called cdv never shows the banner.
    */
   private _computeNotConsulted(): boolean {
     if (!this._hasEditActivity) { return false; }
@@ -187,7 +187,7 @@ export class LoopMonitorProvider implements vscode.WebviewViewProvider {
   // ─── Data readers ──────────────────────────────────────────────────────────
 
   private _readConsultation(): ConsultationRecord | null {
-    const consultationPath = path.join(this._loopllmDir, "consultation.json");
+    const consultationPath = path.join(this._cdvDir, "consultation.json");
     try {
       if (!fs.existsSync(consultationPath)) { return null; }
       const data = JSON.parse(fs.readFileSync(consultationPath, "utf-8"));
@@ -199,7 +199,7 @@ export class LoopMonitorProvider implements vscode.WebviewViewProvider {
   }
 
   private _readActiveRuns(): ActiveRun[] {
-    const dir = path.join(this._loopllmDir, "active_runs");
+    const dir = path.join(this._cdvDir, "active_runs");
     try {
       if (!fs.existsSync(dir)) { return []; }
       return fs.readdirSync(dir)
@@ -214,7 +214,7 @@ export class LoopMonitorProvider implements vscode.WebviewViewProvider {
   }
 
   private _readEpisodesFeed(): EpisodeFeedEntry[] {
-    const feedPath = path.join(this._loopllmDir, "episodes_feed.json");
+    const feedPath = path.join(this._cdvDir, "episodes_feed.json");
     try {
       if (!fs.existsSync(feedPath)) { return []; }
       const data = JSON.parse(fs.readFileSync(feedPath, "utf-8"));
@@ -513,7 +513,7 @@ export class LoopMonitorProvider implements vscode.WebviewViewProvider {
   <h3 style="margin:0;border-bottom:none;padding-bottom:0;">DAG Runs <span style="font-weight:400;text-transform:none;letter-spacing:normal;">(agent scrum-master)</span></h3>
   <button class="export-btn" onclick="exportAudit()">Export audit</button>
 </div>
-<div id="dag-runs"><p class="empty">No DAG runs — call loopllm_dag_compile to decompose a complex goal</p></div>
+<div id="dag-runs"><p class="empty">No DAG runs — call cdv_dag_compile to decompose a complex goal</p></div>
 
 <h3>Active Loops</h3>
 <div id="active-loops"><p class="empty">No active loops</p></div>
@@ -594,7 +594,7 @@ function renderDagRuns(runs) {
   const el = document.getElementById('dag-runs');
   const dagRuns = (runs || []).filter(r => r.run_type === 'dag' && r.state && r.state.nodes);
   if (dagRuns.length === 0) {
-    el.innerHTML = '<p class="empty">No DAG runs — call loopllm_dag_compile to decompose a complex goal</p>';
+    el.innerHTML = '<p class="empty">No DAG runs — call cdv_dag_compile to decompose a complex goal</p>';
     return;
   }
   el.innerHTML = dagRuns.map(run => {
@@ -700,9 +700,9 @@ function renderNotConsulted(notConsulted) {
   const el = document.getElementById('not-consulted');
   el.innerHTML = notConsulted
     ? '<div class="not-consulted-banner"><span class="dot"></span>' +
-        'PromptLoop has not been consulted this session — the agent may be ' +
-        'editing without verification. Ask it to call loopllm_intercept or ' +
-        'loopllm_dag_compile.</div>'
+        'CDV has not been consulted this session — the agent may be ' +
+        'editing without verification. Ask it to call cdv_intercept or ' +
+        'cdv_dag_compile.</div>'
     : '';
 }
 

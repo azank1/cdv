@@ -2,7 +2,7 @@
  * Loop LLM — Prompt Quality Gauge
  *
  * VS Code extension that displays real-time prompt quality scoring from
- * the loop-llm MCP server. Shows a status bar gauge, sidebar dashboard
+ * the cdv MCP server. Shows a status bar gauge, sidebar dashboard
  * with learning curve chart, dimension radar, and improvement suggestions.
  */
 
@@ -24,7 +24,7 @@ let promptLabProvider: PromptLabProvider;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let scoreDebounce: ReturnType<typeof setTimeout> | undefined;
 
-/** Build a PATH that includes common loopllm install locations. */
+/** Build a PATH that includes common cdv install locations. */
 function buildEnv(): NodeJS.ProcessEnv {
   const home = process.env.HOME ?? "";
   const extras = [
@@ -37,19 +37,19 @@ function buildEnv(): NodeJS.ProcessEnv {
 }
 
 /**
- * Ask `loopllm paths` for the per-project state directory (scoped by git
- * remote / repo root, see src/loopllm/project_scope.py) so the extension
+ * Ask `cdv paths` for the per-project state directory (scoped by git
+ * remote / repo root, see src/cdv/project_scope.py) so the extension
  * watches the same files the MCP server and CLI write to. Falls back to the
- * legacy flat `~/.loopllm/` layout if the CLI isn't reachable yet.
+ * flat `~/.cdv/` layout if the CLI isn't reachable yet.
  */
-function resolveLoopllmPaths(
+function resolveCdvPaths(
   configuredDbPath: string | undefined,
   home: string,
   wsRoot: string | undefined
 ): { dbPath: string; statusPath: string } {
   const legacy = {
-    dbPath: `${home}/.loopllm/store.db`,
-    statusPath: `${home}/.loopllm/status.json`,
+    dbPath: `${home}/.cdv/store.db`,
+    statusPath: `${home}/.cdv/status.json`,
   };
   if (configuredDbPath) {
     return {
@@ -58,7 +58,7 @@ function resolveLoopllmPaths(
     };
   }
   try {
-    const output = cp.execFileSync("loopllm", ["paths"], {
+    const output = cp.execFileSync("cdv", ["paths"], {
       cwd: wsRoot,
       env: buildEnv(),
       timeout: 5000,
@@ -70,22 +70,22 @@ function resolveLoopllmPaths(
     }
   } catch (err) {
     console.warn(
-      "loopllm: could not resolve per-project paths (is loopllm on PATH?); " +
-        "falling back to legacy ~/.loopllm/ layout",
+      "cdv: could not resolve per-project paths (is cdv on PATH?); " +
+        "falling back to legacy ~/.cdv/ layout",
       err
     );
   }
   return legacy;
 }
 
-/** Spawn `loopllm score <text>` — writes status.json which StatusWatcher picks up. */
+/** Spawn `cdv score <text>` — writes status.json which StatusWatcher picks up. */
 function triggerScore(text: string, dbPath: string): void {
   const trimmed = text.trim();
   if (trimmed.length < 8) { return; }
   if (scoreDebounce) { clearTimeout(scoreDebounce); }
   scoreDebounce = setTimeout(() => {
     cp.execFile(
-      "loopllm",
+      "cdv",
       ["--db", dbPath, "score", trimmed.slice(0, 2000)],
       { timeout: 6000, env: buildEnv() },
       () => { /* status.json written; StatusWatcher fires gauge update */ }
@@ -94,13 +94,13 @@ function triggerScore(text: string, dbPath: string): void {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const config = vscode.workspace.getConfiguration("loopllm");
+  const config = vscode.workspace.getConfiguration("cdv");
 
-  // Resolve paths — scoped per-project via `loopllm paths` unless the user
-  // pinned an explicit dbPath in settings (see resolveLoopllmPaths above).
+  // Resolve paths — scoped per-project via `cdv paths` unless the user
+  // pinned an explicit dbPath in settings (see resolveCdvPaths above).
   const home = process.env.HOME || process.env.USERPROFILE || "~";
   const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const resolved = resolveLoopllmPaths(
+  const resolved = resolveCdvPaths(
     config.get<string>("dbPath"),
     home,
     wsRoot
@@ -124,39 +124,39 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register sidebar webviews
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      "loopllm.promptLab",
+      "cdv.promptLab",
       promptLabProvider
     )
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      "loopllm.loopMonitor",
+      "cdv.loopMonitor",
       loopMonitorProvider
     )
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      "loopllm.dashboard",
+      "cdv.dashboard",
       dashboardProvider
     )
   );
 
   // Register commands
   context.subscriptions.push(
-    vscode.commands.registerCommand("loopllm.refreshStats", async () => {
+    vscode.commands.registerCommand("cdv.refreshStats", async () => {
       await refreshData();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("loopllm.showDashboard", () => {
-      vscode.commands.executeCommand("loopllm.dashboard.focus");
+    vscode.commands.registerCommand("cdv.showDashboard", () => {
+      vscode.commands.executeCommand("cdv.dashboard.focus");
     })
   );
 
   // Command: score the current selection (or full line) on demand
   context.subscriptions.push(
-    vscode.commands.registerCommand("loopllm.scoreSelection", () => {
+    vscode.commands.registerCommand("cdv.scoreSelection", () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) { return; }
       const sel = editor.document.getText(editor.selection);

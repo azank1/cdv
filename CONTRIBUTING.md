@@ -1,13 +1,13 @@
-# Contributing to PromptLoop (`loopllm`)
+# Contributing to CDV (`cdv`)
 
-Thanks for your interest in improving PromptLoop. This guide covers local setup,
+Thanks for your interest in improving CDV. This guide covers local setup,
 the branch/commit conventions, and the checks your change must pass.
 
 ## Local setup
 
 ```bash
-git clone https://github.com/azank1/loop-llm
-cd loop-llm
+git clone https://github.com/azank1/cdv
+cd cdv
 pip install -e ".[dev]"
 python -m pytest tests/ -q          # 282 tests (278 pass, 4 integration skipped)
 ```
@@ -40,7 +40,7 @@ Use squash-merge PRs into `main`; delete feature branches after merge.
 
 ```bash
 ruff check src/ tests/
-mypy --strict src/loopllm/
+mypy --strict src/cdv/
 python -m pytest tests/ -q
 ```
 
@@ -48,21 +48,21 @@ python -m pytest tests/ -q
 
 | Area | File |
 |---|---|
-| Core refinement loop | `src/loopllm/engine.py` |
-| Bayesian priors / learning | `src/loopllm/priors.py` |
-| Adaptive agent loops | `src/loopllm/agent_loop.py` |
-| Framework stop adapter (should_continue) | `src/loopllm/adapters.py` |
-| Conservative Dual-Verify scoring | `src/loopllm/step_scorer.py` |
-| Agent-loop guard stack | `src/loopllm/guards.py` |
-| Evaluator factory | `src/loopllm/evaluator_factory.py` |
-| Bayesian early stopping | `src/loopllm/adaptive_exit.py` |
-| MCP tools (36) | `src/loopllm/mcp_server.py` |
-| Episodic memory | `src/loopllm/episodes.py` |
-| DAG virtual sub-agents | `src/loopllm/dag_scheduler.py` |
-| SQLite persistence (schema v6) | `src/loopllm/store.py` |
-| Per-project state scoping | `src/loopllm/project_scope.py` |
-| CLI | `src/loopllm/cli.py` |
-| Providers (agent/ollama/openrouter/mock) | `src/loopllm/providers/` |
+| Core refinement loop | `src/cdv/engine.py` |
+| Bayesian priors / learning | `src/cdv/priors.py` |
+| Adaptive agent loops | `src/cdv/agent_loop.py` |
+| Framework stop adapter (should_continue) | `src/cdv/adapters.py` |
+| Conservative Dual-Verify scoring | `src/cdv/step_scorer.py` |
+| Agent-loop guard stack | `src/cdv/guards.py` |
+| Evaluator factory | `src/cdv/evaluator_factory.py` |
+| Bayesian early stopping | `src/cdv/adaptive_exit.py` |
+| MCP tools (36) | `src/cdv/mcp_server.py` |
+| Episodic memory | `src/cdv/episodes.py` |
+| DAG virtual sub-agents | `src/cdv/dag_scheduler.py` |
+| SQLite persistence (schema v6) | `src/cdv/store.py` |
+| Per-project state scoping | `src/cdv/project_scope.py` |
+| CLI | `src/cdv/cli.py` |
+| Providers (agent/ollama/openrouter/mock) | `src/cdv/providers/` |
 | VS Code extension | `vscode-loopllm/` |
 
 ## Publishing the VS Code extension
@@ -70,7 +70,7 @@ python -m pytest tests/ -q
 ```bash
 cd vscode-loopllm
 npm install
-npm run package          # produces loopllm-prompt-gauge-<version>.vsix
+npm run package          # produces cdv-judge-<version>.vsix
 ```
 
 That `.vsix` can be installed locally (`Extensions: Install from VSIX...` in the
@@ -78,7 +78,7 @@ command palette) or shared directly. Publishing it to the VS Code Marketplace
 additionally requires:
 
 1. A registered Marketplace publisher id matching `"publisher"` in `package.json`
-   (currently `loopllm` — create one at https://marketplace.visualstudio.com/manage
+   (currently `cdv` — create one at https://marketplace.visualstudio.com/manage
    if it doesn't exist yet).
 2. A personal access token (Azure DevOps) with Marketplace publish scope.
 3. `npx @vscode/vsce publish -p <token>` (or `vsce login <publisher>` once, then

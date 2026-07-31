@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from PIL import Image, ImageDraw, ImageFont
 
-from loopllm.mcp_server import _tool_loop_start, _tool_loop_step
+from cdv.mcp_server import _tool_loop_start, _tool_loop_step
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "img" / "agent_loop.gif"
@@ -77,9 +77,9 @@ async def _collect_frames() -> list[tuple[str, dict]]:
         )
     )
     return [
-        ("loopllm_loop_start", start),
-        ("loopllm_loop_step", step1),
-        ("loopllm_loop_step", step2),
+        ("cdv_loop_start", start),
+        ("cdv_loop_step", step1),
+        ("cdv_loop_step", step2),
     ]
 
 
@@ -126,7 +126,7 @@ def _render_frame(
             if y > height - 24:
                 break
 
-    draw.text((24, height - 28), "Conservative Dual-Verify · loopllm 0.7.0", fill=MUTED, font=font)
+    draw.text((24, height - 28), "Conservative Dual-Verify · cdv 0.7.0", fill=MUTED, font=font)
     return img
 
 

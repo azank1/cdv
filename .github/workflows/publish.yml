@@ -33,5 +33,5 @@ jobs:
       - name: Verify install
         run: |
           VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          pip install "loopllm[mcp]==${VERSION}"
-          python -c "import loopllm; print(loopllm.__version__)"
+          pip install "cdv[mcp]==${VERSION}"
+          python -c "import cdv; print(cdv.__version__)"

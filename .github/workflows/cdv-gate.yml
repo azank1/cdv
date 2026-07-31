@@ -1,10 +1,10 @@
-name: loopllm audit gate
+name: cdv audit gate
 
 # Report-only by default: this checks every PR against this repo's own
-# committed .loopllm/audit.json (if any exist) and posts a summary, but
+# committed .cdv/audit.json (if any exist) and posts a summary, but
 # does not fail the build. Add `min-score` / `require-verified` to the
 # `with:` block below once the team is ready to enforce it — see
-# RELEASING.md and .github/actions/loopllm-gate/action.yml.
+# RELEASING.md and .github/actions/cdv-gate/action.yml.
 on:
   pull_request:
     branches: [main]
@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/loopllm-gate
+      - uses: ./.github/actions/cdv-gate
         with:
           since: origin/${{ github.event.pull_request.base.ref }}
           pip-spec: "."

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a problem with loopllm
+about: Report a problem with cdv
 title: "bug: "
 labels: bug
 ---
@@ -18,7 +18,7 @@ Steps or a minimal snippet (CLI command, MCP tool call, or Python):
 What you expected to happen.
 
 **Environment**
-- loopllm version: (`pip show loopllm`)
+- cdv version: (`pip show cdv`)
 - Python version:
 - OS:
 - Provider: agent / ollama / openrouter / mock

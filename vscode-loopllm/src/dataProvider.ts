@@ -1,5 +1,5 @@
 /**
- * Reads prompt history from ~/.loopllm/prompt_history.json
+ * Reads prompt history from ~/.cdv/prompt_history.json
  * (written by the MCP server on every intercept call).
  *
  * Zero external dependencies — uses only Node.js built-ins.

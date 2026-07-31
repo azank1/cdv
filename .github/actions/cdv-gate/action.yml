@@ -1,11 +1,11 @@
-name: "loopllm audit gate"
+name: "cdv audit gate"
 description: >
-  Fail a PR when code-touching commits lack a loopllm Conservative
-  Dual-Verify record, using the committed `.loopllm/audit.json` artifact
+  Fail a PR when code-touching commits lack a cdv Conservative
+  Dual-Verify record, using the committed `.cdv/audit.json` artifact
   (see RELEASING.md / README "Verification audit trail"). Report-only
   unless `min-score` or `require-verified` is set, so a team can dogfood
   the report before turning on enforcement.
-author: "loopllm"
+author: "cdv"
 
 inputs:
   since:
@@ -17,7 +17,7 @@ inputs:
   artifact:
     description: "Path to the committed audit artifact"
     required: false
-    default: ".loopllm/audit.json"
+    default: ".cdv/audit.json"
   min-score:
     description: "Fail commits scoring below this threshold (also fails commits with no record)"
     required: false
@@ -32,11 +32,11 @@ inputs:
     default: "3.12"
   pip-spec:
     description: >
-      What to `pip install` to get the `loopllm` CLI. Defaults to the
+      What to `pip install` to get the `cdv` CLI. Defaults to the
       published PyPI package; override to a local path (e.g. `.`) when
-      calling this action from within the loop-llm repo's own checkout.
+      calling this action from within the cdv repo's own checkout.
     required: false
-    default: "loopllm"
+    default: "cdv"
 
 outputs:
   result:
@@ -51,7 +51,7 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Install loopllm
+    - name: Install cdv
       shell: bash
       run: pip install "${{ inputs.pip-spec }}"
 
@@ -67,12 +67,12 @@ runs:
         if [ "${{ inputs.require-verified }}" = "true" ]; then
           args+=(--require-verified)
         fi
-        loopllm audit-gate "${args[@]}" > gate_output.txt
+        cdv audit-gate "${args[@]}" > gate_output.txt
         status=$?
         set -e
 
         {
-          echo "### loopllm audit gate"
+          echo "### cdv audit gate"
           echo
           echo '```'
           cat gate_output.txt

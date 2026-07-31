@@ -29,7 +29,7 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Type check with mypy
-        run: mypy --strict src/loopllm/
+        run: mypy --strict src/cdv/
 
       - name: Run tests
         run: pytest tests/ -v

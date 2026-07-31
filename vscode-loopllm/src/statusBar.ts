@@ -17,7 +17,7 @@ export class StatusBarGauge {
       vscode.StatusBarAlignment.Right,
       100
     );
-    this.item.command = "loopllm.showDashboard";
+    this.item.command = "cdv.showDashboard";
     this.item.tooltip = "Loop LLM — Prompt Quality (click for dashboard)";
     this.item.text = "$(pulse) LLM: --";
     this.item.show();

@@ -1,18 +1,18 @@
 {
-  "name": "loopllm-prompt-gauge",
-  "displayName": "PromptLoop — Agent Verification Board",
-  "description": "Your agent said it works. PromptLoop is the receipt — Conservative Dual-Verify loop monitor, git-stamped audit trail, and live prompt scoring for Cursor / Copilot / Claude Code.",
-  "version": "0.3.1",
+  "name": "cdv-judge",
+  "displayName": "CDV — Judge for AI Coding Agents",
+  "description": "CDV is the judge for AI coding agents — your agent said it works, CDV is the receipt. Conservative Dual-Verify loop monitor, git-stamped audit trail, and live prompt scoring for Cursor / Copilot / Claude Code.",
+  "version": "1.0.0",
   "publisher": "loopllm",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/azank1/loop-llm",
+    "url": "https://github.com/azank1/cdv",
     "directory": "vscode-loopllm"
   },
-  "homepage": "https://github.com/azank1/loop-llm",
+  "homepage": "https://github.com/azank1/cdv",
   "bugs": {
-    "url": "https://github.com/azank1/loop-llm/issues"
+    "url": "https://github.com/azank1/cdv/issues"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -23,14 +23,15 @@
   ],
   "keywords": [
     "verification",
-    "agent",
+    "judge",
+    "scorer",
+    "ai agent",
     "audit",
     "receipt",
     "cursor",
     "llm",
     "prompt",
     "quality",
-    "gauge",
     "ai"
   ],
   "activationEvents": [
@@ -41,67 +42,67 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "loopllm",
-          "title": "PromptLoop",
+          "id": "cdv",
+          "title": "CDV",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "loopllm": [
+      "cdv": [
         {
           "type": "webview",
-          "id": "loopllm.promptLab",
+          "id": "cdv.promptLab",
           "name": "Prompt Lab"
         },
         {
           "type": "webview",
-          "id": "loopllm.loopMonitor",
+          "id": "cdv.loopMonitor",
           "name": "Loop Monitor"
         },
         {
           "type": "webview",
-          "id": "loopllm.dashboard",
+          "id": "cdv.dashboard",
           "name": "History"
         }
       ]
     },
     "commands": [
       {
-        "command": "loopllm.refreshStats",
-        "title": "PromptLoop: Refresh Prompt Stats"
+        "command": "cdv.refreshStats",
+        "title": "CDV: Refresh Prompt Stats"
       },
       {
-        "command": "loopllm.showDashboard",
-        "title": "PromptLoop: Show Dashboard"
+        "command": "cdv.showDashboard",
+        "title": "CDV: Show Dashboard"
       },
       {
-        "command": "loopllm.scoreSelection",
-        "title": "PromptLoop: Score Selected Text"
+        "command": "cdv.scoreSelection",
+        "title": "CDV: Score Selected Text"
       }
     ],
     "keybindings": [
       {
-        "command": "loopllm.scoreSelection",
+        "command": "cdv.scoreSelection",
         "key": "ctrl+shift+l",
         "mac": "cmd+shift+l",
         "when": "editorTextFocus"
       }
     ],
     "configuration": {
-      "title": "PromptLoop",
+      "title": "CDV",
       "properties": {
-        "loopllm.dbPath": {
+        "cdv.dbPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the loopllm SQLite database. Leave empty to auto-resolve the per-project store via `loopllm paths` (recommended)."
+          "description": "Path to the cdv SQLite database. Leave empty to auto-resolve the per-project store via `cdv paths` (recommended)."
         },
-        "loopllm.pollIntervalMs": {
+        "cdv.pollIntervalMs": {
           "type": "number",
           "default": 3000,
           "description": "How often (ms) to poll the database for updates"
         },
-        "loopllm.statusFilePath": {
+        "cdv.statusFilePath": {
           "type": "string",
           "default": "",
           "description": "Path to status.json. Leave empty to auto-resolve alongside the per-project database."

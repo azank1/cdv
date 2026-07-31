@@ -10,7 +10,7 @@
 
 - [ ] `python -m pytest tests/ -q` passes
 - [ ] `ruff check src/ tests/` clean
-- [ ] `mypy --strict src/loopllm/` clean
+- [ ] `mypy --strict src/cdv/` clean
 - [ ] Added/updated tests for new behavior
 - [ ] Updated README / CHANGELOG if user-facing
 
