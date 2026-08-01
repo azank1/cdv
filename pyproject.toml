@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cdv"
-version = "1.0.0"
+version = "1.0.1"
 description = "The judge for AI coding agents: an MCP sidecar that scores every step through Conservative Dual-Verify (deterministic floor + independent critic), stamps a git-anchored audit trail, and gates CI on it. Built on FastMCP, SQLite, and Bayesian priors — no extra LLM required."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,7 +51,7 @@ ollama = [
     "httpx>=0.27.0",
 ]
 mcp = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
 ]
 serve = [
     "fastapi>=0.110.0",
@@ -60,7 +60,7 @@ serve = [
 ]
 all = [
     "httpx>=0.27.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
 ]
@@ -70,7 +70,7 @@ dev = [
     "httpx>=0.27.0",
     "ruff==0.15.18",
     "mypy==2.1.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
 ]
 
 [project.scripts]

@@ -29,7 +29,7 @@ from cdv.step_scorer import DualVerifyScore, conservative_dual_verify
 from cdv.store import LoopStore, SQLiteBackedPriors
 from cdv.tasks import Task, TaskOrchestrator, TaskPlan, TaskState
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 __all__ = [
     # Engine

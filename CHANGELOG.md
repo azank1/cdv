@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-08-01
+
+### Fixed
+- Cap `mcp` dependency at `<2` — the unpinned `mcp>=1.0.0` let pip resolve
+  the brand-new mcp 2.0 line, which the CDV server is not yet validated
+  against (its type stubs no longer resolve for mypy, and runtime is
+  untested locally). Pin ruff/mypy in dev extras so CI and local runs use
+  identical lint gates (CI broke when ruff 0.16.1 shipped new rules).
+
 ## [1.0.0] — 2026-07-23
 
 ### Changed
