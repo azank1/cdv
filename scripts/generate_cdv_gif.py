@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from cdv.mcp_server import _tool_loop_start, _tool_loop_step
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "img" / "agent_loop.gif"
+OUT = ROOT / ".github" / "assets" / "agent-loop.gif"
 
 BG = (30, 30, 30)
 PANEL = (37, 37, 38)
@@ -106,7 +106,7 @@ def _render_frame(
     tool_name: str,
     payload: dict,
     width: int = 800,
-    height: int = 520,
+    height: int = 560,
 ) -> Image.Image:
     img = Image.new("RGB", (width, height), BG)
     draw = ImageDraw.Draw(img)
@@ -126,7 +126,7 @@ def _render_frame(
             if y > height - 24:
                 break
 
-    draw.text((24, height - 28), "Conservative Dual-Verify · cdv 0.7.0", fill=MUTED, font=font)
+    draw.text((24, height - 28), "Conservative Dual-Verify · cdv 1.0.1", fill=MUTED, font=font)
     return img
 
 
@@ -140,7 +140,8 @@ async def main() -> None:
         append_images=images[1:],
         duration=3500,
         loop=0,
-        optimize=True,
+        optimize=False,
+        disposal=2,
     )
     size_kb = OUT.stat().st_size // 1024
     print(f"Wrote {OUT} ({size_kb} KB, {len(images)} frames)")

@@ -1,400 +1,125 @@
-# CDV
-
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=22&pause=1000&color=00CFFF&center=true&vCenter=true&width=700&lines=The+judge+for+AI+coding+agents.;Your+agent+said+it+works.;CDV+is+the+receipt.;Every+step%2C+independently+verified.;Git-stamped+audit+trail%2C+per+project.;Local-first%2C+model-agnostic%2C+no+API+key;Open+Source+%E2%80%94+MIT+Licensed)](https://github.com/azank1/cdv)
+# CDV — Conservative Dual-Verify
 
 [![CI](https://github.com/azank1/cdv/actions/workflows/ci.yml/badge.svg)](https://github.com/azank1/cdv/actions/workflows/ci.yml)
+[![Tests: 309](https://img.shields.io/badge/tests-309_passing-brightgreen)](https://github.com/azank1/cdv/actions/workflows/ci.yml)
+[![mypy: strict](https://img.shields.io/badge/mypy-strict-blue)](https://github.com/azank1/cdv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PyPI](https://img.shields.io/badge/PyPI-cdv-blue)](https://pypi.org/project/cdv/)
-[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=loopllm.cdv-judge)
 
-**CDV — the judge for AI coding agents.**
+**Judging AI agent work with a deterministic floor and an LLM critic — the
+stricter score wins, and a Bayesian policy decides when to stop.**
 
-**Your agent said it works. CDV is the receipt.**
+![A CDV agent loop: the agent claims progress, the deterministic channel vetoes step 1, and only step 2 — verified by both channels — stops the loop](.github/assets/agent-loop.gif)
 
-Cursor, Copilot, Claude Code — every agent ends a task with "done, all tests pass."
-Sometimes that's true. CDV sits between your IDE agent
-and the model, scores each step the agent submits through **two independent
-channels** (a deterministic floor plus an LLM critic — the stricter score wins),
-and stamps the verdicts onto your git history as an **audit trail** you can review,
-export, or gate CI on. No API key, no cloud, nothing leaves your machine.
+*An agent claims "tests pass." Channel A (deterministic) finds no evidence and
+vetoes; the loop continues. Only when both channels agree does the run stop —
+and the verdicts are stamped onto git history.*
 
-What a caught lie looks like (real tool output):
-
-```
-cdv_loop_start(goal="make the failing test pass", task_type="bugfix")
-  → { suggested_budget: 3, quality_threshold: 0.8, evaluator_type: "composite" }
-
-cdv_loop_step(session_id, step_output="pytest: 3 failed, 12 passed")
-  → {
-      decision: "continue",
-      score: 0.0,
-      channel_a_score: 0.0,      ← deterministic floor: "tests passed" not found
-      channel_b_score: 0.55,     ← LLM critic was more forgiving — vetoed
-      deficiencies: ["Required pattern not found: tests passed"],
-    }
-```
-
-The agent *reported* progress. The receipt says otherwise — and the loop keeps
-going until the evidence, not the agent, says it's done.
+> **Status: research preview.** This repository is the published concept,
+> frozen at **v1.0.1**. Active development continues privately; issues and PRs
+> here may not be answered. The code is MIT — read it, cite it, fork it.
 
 ---
 
-## Quickstart
+## The problem
 
-Published on [PyPI](https://pypi.org/project/cdv/) as `cdv`. Two ways to use it: the **CLI** (try in seconds) and the **MCP server** (main use — plugs into Cursor / VS Code / Claude Code).
+Agent loops today end in one of two ways:
 
-### Install
+- **Fixed `max_iterations`** — cheap and wrong: either the loop stops while the
+  work is unfinished, or it burns tokens long after the work is done.
+- **The agent grades itself** — and agents optimize *reported* progress. "Done,
+  all tests pass" is a claim, not evidence.
 
-```bash
-pipx install "cdv[mcp]"          # cleanest — isolated, puts cdv on PATH
-```
+Both failure modes come from the same place: the entity deciding to stop is the
+entity being judged. CDV separates them.
 
-On Ubuntu/Debian, bare `pip install cdv` fails with `externally-managed-environment` (PEP 668). Use pipx (above), or a venv:
+## The method
 
-```bash
-python3 -m venv ~/.venvs/cdv
-~/.venvs/cdv/bin/pip install "cdv[mcp]"
-# CLI is then at ~/.venvs/cdv/bin/cdv
-```
-
-### Try it in 5 seconds — score a prompt (no MCP, no API key)
-
-```bash
-cdv score "write me some code"
-cdv score "add retry with backoff to download(); raise after 3 tries" --json
-```
-
-Fully offline. Writes gauge state to `~/.cdv/status.json` (VS Code extension picks it up).
-
-### Main use — MCP server in Cursor / VS Code / Antigravity / Claude Code
-
-The server runs over stdio; your IDE's agent launches it. One command registers it
-in whichever IDEs you have installed, merging into any existing MCP config instead
-of overwriting it:
-
-```bash
-cdv install-mcp --ide all          # cursor + vscode + antigravity
-cdv install-mcp --ide claude-code  # project-scoped .mcp.json (commit it — see below)
-```
-
-Then reload the IDE. In agent chat you'll have the `cdv_*` tools.
-
-If you installed in a venv (not pipx), edit the written config's `"command"` to the
-absolute venv path (e.g. `/home/you/.venvs/cdv/bin/cdv`) — the IDE won't
-see your venv's PATH. `--provider agent` (the default) uses your IDE's model via
-MCP sampling; no API key needed.
-
-<details>
-<summary>Prefer to edit the MCP config by hand?</summary>
-
-**Cursor** — `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
-
-```json
-{
-  "mcpServers": {
-    "cdv": {
-      "command": "cdv",
-      "args": ["mcp-server", "--provider", "agent"]
-    }
-  }
-}
-```
-
-**VS Code** (Copilot agent mode) / **Antigravity** — `.vscode/mcp.json` or the
-equivalent user-scoped `mcp.json`:
-
-```json
-{
-  "servers": {
-    "cdv": {
-      "type": "stdio",
-      "command": "cdv",
-      "args": ["mcp-server", "--provider", "agent"]
-    }
-  }
-}
-```
-
-**Claude Code** — `.mcp.json` at the project root (project-scoped, meant to be
-committed so the whole team gets the same server):
-
-```json
-{
-  "mcpServers": {
-    "cdv": {
-      "command": "cdv",
-      "args": ["mcp-server", "--provider", "agent"]
-    }
-  }
-}
-```
-
-</details>
-
-Verify on first load:
+Two loops, one handoff:
 
 ```
-use cdv_loop_start with goal="make the failing test pass" task_type="bugfix"
+        elicitation loop                        judgment loop
+ ┌──────────────────────────┐   intent    ┌───────────────────────────────┐
+ │ score prompt (5 dims)    │  (goal +    │  agent runs — externally,     │
+ │ clarify via Thompson-    │  criteria + │  in your IDE                  │
+ │ sampled questions        │  patterns)  │        │                      │
+ │ refine until specific    │ ──────────► │        ▼                      │
+ └──────────────────────────┘             │  step artifact (test log,     │
+                                          │  diff, summary)               │
+                                          │        │                      │
+                                          │        ▼                      │
+                                          │  Channel A: deterministic     │
+                                          │  Channel B: LLM critic        │
+                                          │  score = min(A, B)  ← veto    │
+                                          │        │                      │
+                                          │        ▼                      │
+                                          │  Bayesian stop/continue       │
+                                          └───────────────────────────────┘
 ```
 
-> **Making the agent actually use it.** MCP is advisory — nothing can force an IDE
-> agent to call cdv. Two answers: `install-mcp` can drop rules/instruction
-> files that tell your agent to consult CDV (see
-> `cdv install-mcp --help`), and the VS Code Loop Monitor shows an
-> undismissable banner — *"CDV has not been consulted this session"* —
-> whenever you've been editing but the agent hasn't called an entry-point tool.
-> Silent non-adoption becomes visible instead of invisible.
-
----
-
-## The receipt — Conservative Dual-Verify (Layer 3)
-
-Most agent loops stop on a fixed `max_iterations` or let the agent self-grade when
-it's "done." Both waste tokens or optimize **reported** progress. CDV's
-**Conservative Dual-Verify**: agents submit step **artifacts** (test logs, diffs,
-summaries); the MCP server scores them through **two channels** and feeds the
-**stricter** score into Bayesian stop/continue logic.
-
-```python
-channel_a = deterministic_evaluator.evaluate(step_output)   # regex, JSON, completeness
-channel_b = critic_sample(step_output, goal, criteria)      # critic-role call, same sampled model
-final_score = min(channel_a, channel_b)                     # either channel can veto
-```
-
-Channel A is a hard, model-independent floor (regex/JSON/completeness — it can't be
-argued with). Channel B today calls the *same* MCP-sampled model as the agent
-itself, just under an "independent verifier" prompt role, not a genuinely separate
-model — see [Known limitations](#known-limitations) for why that matters and what
-would close the gap.
-
-`cdv_loop_step` returns `stop` when any guard fires: goal reached (verified score),
-plateau, low Bayesian ROI, budget exhausted, timeout, token cap, or repeated output.
-
-What a terminal run looks like:
-
-```text
-=== Loop (task_type=bugfix) ===
-Suggested budget: 3 step(s) | threshold 0.80 | confidence 0.00 (from 0 past loops)
-  step  1 | 0.45 |#########           | -> CONTINUE: step 1/3, score 0.450 below 0.80
-  step  2 | 0.85 |#################   | -> STOP: Goal reached: 0.850 >= 0.80 at step 2
-```
-
-**Session continuity.** Every verified `cdv_loop_step` is checkpointed. If the
-MCP server or IDE restarts, in-progress loops rehydrate on startup;
-`cdv_run_status` shows them and `cdv_loop_resume` continues where they left
-off. Each verdict also reports `cdv_mode` (`full` when an independent critic ran via
-MCP sampling, `channel_a_only` when only deterministic checks ran).
-
-### The audit trail
-
-Every recorded episode (agent loop or DAG node) is stamped with the git commit that
-was `HEAD` at the time:
-
-- `cdv audit --since origin/main` — human-readable report of what the agent did
-  on this branch and how it was verified. The reviewable record you can point to.
-- `cdv audit --export .cdv/audit.json` — the same trail as a portable
-  artifact you commit alongside the code it verifies.
-- `cdv audit-gate --since origin/main [--min-score X] [--require-verified]` —
-  read it back in CI and check every commit in the PR. Without the enforcement
-  flags it only reports, so you can dogfood before turning it on. See
-  [`.github/workflows/cdv-gate.yml`](.github/workflows/cdv-gate.yml) for
-  this repo's own (report-only) setup, or drop the reusable
-  [`.github/actions/cdv-gate`](.github/actions/cdv-gate/action.yml)
-  composite action into another repo's workflow.
-- The VS Code Loop Monitor's **Export audit** button opens the same report as a
-  markdown document.
-
----
-
-## VS Code Extension — the verification board
-
-The extension is the face of CDV: a live prompt-quality scratchpad, the CDV
-loop monitor, and a history dashboard in the sidebar. It reads the same per-project
-SQLite state the server writes — no cloud, no account.
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-**Prompt Lab** — live quality scratchpad
-
-![Prompt Lab](.github/assets/prompt-lab.jpg)
-
-Scores on every keystroke (350 ms debounce). Grade badge, 5 dimension bars, issues + suggestions tags, Copy and Send to Chat. The free, zero-setup hook — "ESLint for your prompts."
-
-</td>
-<td width="50%" valign="top">
-
-**History** — learning curve + metrics
-
-![History](.github/assets/history.jpg)
-
-Learning curve sparkline, grade distribution, SGD learned weights per dimension. Updates after every `cdv_feedback` call.
-
-</td>
-</tr>
-</table>
-
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=loopllm.cdv-judge):
-
-```bash
-code --install-extension loopllm.cdv-judge
-```
-
-Cursor does not use the Microsoft Marketplace — until the extension is on
-[Open VSX](https://open-vsx.org/), sideload the VSIX (build from source below, or
-grab a release artifact) with `cursor --install-extension <path-to.vsix>`.
-
-<details>
-<summary>Build from source (contributors)</summary>
-
-```bash
-cd vscode-loopllm
-npm install
-npx @vscode/vsce package --no-dependencies   # cdv-judge-1.0.0.vsix
-code --install-extension cdv-judge-1.0.0.vsix
-```
-
-</details>
-
----
-
-## Memory model
-
-Every repo gets its own store: CDV resolves a per-project id from your git
-remote (falling back to the repo root, then the working directory) and keys all
-local state under `~/.cdv/projects/<id>/store.db` — two unrelated repos never
-share episodes, priors, or active runs. Override auto-detection with `CDV_PROJECT`
-(e.g. in CI, or a worktree that should share state with its main clone). Run
-`cdv paths` to see the resolved directory for the current repo.
-
-Upgrading from v0.9 or earlier? Your old global `~/.cdv/store.db` isn't
-lost — run `cdv migrate-legacy` in each project that should inherit its
-learned priors and episodes (or set `CDV_DB` to keep using it directly).
-
-Two complementary memory layers in this per-project store:
-
-| Layer | What it learns | MCP tools |
-|---|---|---|
-| **Meta-memory** | Optimal loop depth, convergence rate, scoring weights | `cdv_loop_end`, `cdv_feedback` |
-| **Episodic memory** | Summaries of past loops/plans — keyword recall | `cdv_recall`, `cdv_run_status`, `cdv_loop_resume` |
-
-Episodic memory is **not** full chat RAG — it stores compressed outcomes so the next
-loop of the same task type can recall *what worked before*. Recall is also injected
-automatically: `cdv_loop_start` returns `similar_episodes`, and
-`cdv_intercept` flags `recall_available` on clear prompts. (Ranking is
-deterministic keyword overlap today; the seam is stable for an FTS5/vector upgrade.)
-
-This is the retention loop: the longer CDV runs in your repo, the better it
-knows how many steps your bugfixes actually take and what "done" looked like last
-time.
-
----
-
-## The rest of the stack
-
-CDV adds four capabilities on top of your agent harness. Layers 3 (CDV, above)
-and the audit trail are the product; the others support them:
-
-| Layer | Entry point | What it does |
-|---|---|---|
-| 1 — Prompt observer | `cdv_intercept` | Score every prompt across 5 dimensions, route to elicitation/refinement |
-| 2 — Refinement pipeline | `cdv_run_pipeline` | Elicit → decompose → execute → verify inline via MCP sampling |
-| 3 — CDV agent loops | `cdv_loop_start` / `loop_step` / `loop_end` | Dual-verify step artifacts → guards → Bayesian stop |
-| 4 — DAG scrum-master *(experimental)* | `cdv_dag_compile` / `dag_ready` / `dag_submit` / `dag_merge` | Decompose a goal into dependency-ordered nodes; CDV-verify each independently |
-
-All layers share one Bayesian learning core (`AdaptivePriors` + SQLite) — no
-training data, no PyTorch.
-
-![CDV architecture overview: an IDE agent connects through an MCP sidecar into a four-layer stack, which writes to a per-project SQLite store read by the VS Code Loop Monitor and exported to a CI gate](.github/assets/architecture-overview.svg)
-
-### Layer 1 — prompt scoring
-
-`cdv_intercept` scores across 5 dimensions (< 1 ms, deterministic), routes
-weak prompts to elicitation (Thompson Sampling picks the highest-gain question),
-and learns your preferences via online SGD on `cdv_feedback` ratings.
-
-| Dimension | What it catches |
-|---|---|
-| Specificity | Vague, generic requests |
-| Constraint Clarity | Missing format, length, or rule requirements |
-| Context Completeness | No background or goal stated |
-| Ambiguity | Unclear references, pronouns without antecedents |
-| Format Specification | No output format specified |
-
-### Layer 2 — refinement pipeline
-
-`cdv_run_pipeline` runs observe → elicit → refine → verify in one tool call:
-score the prompt, ask clarifying questions if quality < 0.6, decompose if complex,
-execute each subtask via `ctx.sample()` with evaluate-and-retry, verify the
-assembled output, log everything to SQLite. No extra chat turns, no polling.
-
-<details>
-<summary>Learning math (SGD, Thompson Sampling, Bayesian priors)</summary>
-
-### Online Gradient Descent on scoring weights
-
-Default weights: `{specificity: 0.25, constraint_clarity: 0.20, context_completeness: 0.20, ambiguity: 0.20, format_spec: 0.15}`. Each `cdv_feedback(rating)` runs one SGD step; weights clip to $[0.05, 0.50]$ and renormalise. Persisted in `learned_weights` (schema v4).
-
-### Thompson Sampling for question ordering
-
-Each question type maintains $\text{Beta}(\alpha, \beta)$; the pipeline draws $s_i \sim \text{Beta}(\alpha_i, \beta_i)$ and picks $\arg\max_i s_i$.
-
-### Beta-Binomial Bayesian priors
-
-Per-(task\_type, model) convergence priors drive adaptive exit in `adaptive_exit.py` via `BetaPrior.prob_above(threshold)`.
-
-### Welford online variance
-
-`NormalPrior` tracks running mean/variance with optional exponential decay ($\lambda = 0.95$).
-
-</details>
-
----
-
-## Use it as a library — `AdaptiveStopper` (no MCP)
-
-For LangGraph / CrewAI / AutoGen or a hand-rolled loop, `AdaptiveStopper` turns the
-CDV controller into one enforced `should_continue(state)` predicate. If `state`
-carries a verified `score` it's used; otherwise the artifact in `state["output"]`
-is scored locally with the deterministic Channel-A evaluator — so the router stops
-the loop, not the model's self-grade.
-
-```python
-from cdv import AdaptiveStopper
-
-stop = AdaptiveStopper(
-    goal="make the failing tests pass", task_type="bugfix",
-    evaluator_type="regex", required_patterns=[r"0 failed"], max_tokens=20_000,
-)
-
-# LangGraph conditional edge:
-graph.add_conditional_edges("agent", lambda s: stop.route(s, "agent", "END"))
-
-# or any while-loop:
-while stop.should_continue(state):   # state = {"output": artifact, "tokens": n}
-    state = run_agent_step(state)
-```
-
-The same controller is available directly (CDV runs over MCP; here it's driven with
-pre-scored steps):
-
-```python
-from cdv import AdaptivePriors, AgentLoopController
-
-controller = AgentLoopController(AdaptivePriors())
-session = controller.start("fix flaky test", task_type="bugfix")
-verdict = controller.step(session.session_id, score=0.9)   # library API (pre-scored)
-controller.end(session.session_id)
-```
-
-![CDV verification and learning core: an L3/L4 loop step is scored by step_scorer.py's Channel A + B min fusion, filtered through the GuardStack, then AdaptivePriors decides whether to continue using a BetaPrior for convergence and a NormalPrior with Welford's algorithm for score, delta, and latency](.github/assets/verification-learning-core.svg)
-
-### Benchmark: adaptive vs fixed `max_iterations`
-
-Reproducible simulation (seed=7, 300 test tasks, threshold 0.80) — **a synthetic
-simulation of the decision policy, not a live-LLM evaluation** (see
-[Known limitations](#known-limitations)):
+- **Elicitation loop.** A weak prompt is scored across five dimensions
+  (specificity, constraint clarity, context completeness, ambiguity, format
+  specification) and clarified before any tokens are spent on execution.
+  Question order is Thompson-sampled on Beta priors, so the questions that
+  historically resolved the most uncertainty get asked first.
+- **The handoff.** What passes between the loops is *intent made checkable*: a
+  goal, quality criteria, and required evidence patterns. The agent runs
+  entirely outside CDV — in Cursor, Copilot, Claude Code, whatever you use.
+- **Judgment loop.** Each step the agent claims is submitted as an *artifact*
+  (a test log, a diff — never a self-assigned score) and judged twice:
+  - **Channel A** — deterministic evaluators (regex/JSON/completeness). A hard
+    floor that cannot be argued with.
+  - **Channel B** — an LLM critic under an independent-verifier prompt role.
+  - **Fusion is `min(A, B)`, deliberately.** Not a weighted average — either
+    channel can veto. Weighted ensembles let a lenient channel dilute a
+    strict one; min-fusion can't be diluted, only vetoed.
+- **Stopping is a decision problem, not a counter.** A Beta prior tracks
+  convergence probability per task type; Normal priors (Welford online
+  variance) track score, delta, and latency; a composable guard stack (goal
+  reached, plateau, low expected ROI, budget, timeout, token cap, repeated
+  output) converts those into a stop/continue verdict.
+
+## Research notes
+
+Pointers into the code for the concepts being explored:
+
+1. **Conservative fusion for LLM judges** — `src/cdv/step_scorer.py`.
+   `min(A, B)` treats verification like a security property: the paranoid
+   channel sets the ceiling.
+2. **Optimal stopping for agent loops** — `src/cdv/priors.py`,
+   `src/cdv/adaptive_exit.py`, `src/cdv/guards.py`. Bayesian ROI: stop when the
+   expected score gain of another step falls below its cost.
+3. **Prompt quality as a learnable rubric** — `src/cdv/engine.py`,
+   `src/cdv/elicitation.py`. Five deterministic dimensions composited by
+   weights updated online via SGD on user feedback; the VS Code extension
+   scores live with a 350 ms debounce.
+4. **Two-tier memory** — `src/cdv/episodes.py`, `src/cdv/store.py`.
+   *Episodic* memory recalls what worked on similar past tasks; *meta* memory
+   learns how many steps a task type actually takes. Both per-project, keyed
+   from the git remote.
+5. **Crash-recoverable verification state** — `src/cdv/agent_loop.py`.
+   Every verified step is checkpointed; a restarted server rehydrates
+   in-progress loops instead of restarting cold.
+6. **Verification as an audit trail** — `src/cdv/cli.py` (`audit`,
+   `audit-gate`), `.github/actions/cdv-gate`. Every episode is stamped with
+   the commit that was `HEAD` when it was verified, exportable as a CI-gateable
+   artifact.
+
+## Evidence
+
+**Test rigor is part of the claim.** 309 tests (~4.4k lines against ~11.5k
+source), all fast (~3 s), strict mypy, ruff, CI matrix across Python
+3.11–3.13:
+
+- unit tests for the statistical core (Beta/Normal priors, Welford variance,
+  Thompson sampling, SGD weight updates)
+- integration tests through the real MCP tool surface (full loop lifecycles,
+  DAG compile→merge, crash recovery)
+- an **inflation-block test**: a step the agent oversells must be vetoed by
+  Channel A regardless of how charitably Channel B scores it
+- schema-migration tests across six store versions
+
+**Benchmark: adaptive vs fixed `max_iterations`.** Reproducible simulation
+(seed=7, 300 test tasks, threshold 0.80):
 
 | Strategy | Mean steps | Mean final score | % reaching 0.80 | Wasted steps | Efficiency (reach/step) |
 |---|---|---|---|---|---|
@@ -403,168 +128,44 @@ simulation of the decision policy, not a live-LLM evaluation** (see
 | threshold (reactive) | 3.56 | 0.852 | 100.0% | 0.00 | 28.1 |
 | **adaptive (cdv)** | **3.56** | **0.852** | **99.7%** | **0.00** | **28.0** |
 
-**Adaptive uses ~41% fewer steps than a fixed 6-step budget** while reaching the bar
-on 99.7% of tasks.
+Adaptive stopping uses **~41% fewer steps** than a fixed 6-step budget while
+reaching the bar on 99.7% of tasks.
 
-> Honest caveat: simulation with stated assumptions; measures *decision efficiency
-> given a quality signal*, not absolute model quality. It exercises the real
-> `AgentLoopController`/`AdaptivePriors` decision policy, but against a
-> hand-crafted score curve, not real Conservative Dual-Verify (Channel A + B)
-> scored trajectories — and the script generating this table isn't in the
-> current working tree (see [Known limitations](#known-limitations)).
-
----
-
-## Experimental
-
-Built and tested, but not the focus — use if you're curious:
-
-- **DAG scrum-master (Layer 4).** `cdv_dag_compile` decomposes a goal into
-  dependency-ordered virtual sub-agent nodes; each is CDV-verified independently
-  before its dependents unlock; `cdv_dag_merge` combines verified outputs in
-  topological order. The Loop Monitor renders this as a kanban board.
-
-  ![CDV DAG board: a goal decomposed into dependency-ordered nodes, each independently CDV-verified](.github/assets/dag-board.gif)
-
-- **REST scoring endpoint.** `pipx install "cdv[serve]" && cdv serve
-  --port 8765` — score prompts over HTTP, e.g. for Ollama/llama.cpp loops:
-
-  ```python
-  from cdv.local_loop import LocalModelLoop
-
-  loop = LocalModelLoop(
-      base_url="http://localhost:11434",
-      model="llama3.2",
-      score_url="http://localhost:8765/score",
-      quality_threshold=0.80,
-      max_retries=3,
-  )
-  result = loop.run("Write a Python function to parse JSON safely.")
-  ```
-
-- **Local / third-party providers.** `cdv mcp-server --provider ollama
-  --model qwen2.5` or `--provider openrouter` instead of MCP sampling.
-
----
+> This is a **synthetic simulation of the decision policy**, not a live-LLM
+> evaluation: it exercises the real `AgentLoopController`/`AdaptivePriors`
+> against a hand-crafted diminishing-returns curve, not real dual-channel
+> trajectories. Treat it as a lower bound on rigor — the honest number, not
+> the flattering one.
 
 ## Known limitations
 
-- **Session-scoped, single machine.** State lives in a per-project SQLite file
-  under `~/.cdv/`; there is no cloud-native execution, so a loop can't run
-  while the machine is off or continue across machines. Verification and
-  learning act on one project (one commit range) at a time — this is not a
-  multi-repo or multi-agent-fleet system.
-- **Channel B is not yet a genuinely separate model.** `score_channel_b` calls
-  `ctx.sample()` — the same MCP-sampled model the agent itself is using —
-  differentiated only by an "independent verifier" prompt role, not a distinct
-  model. Some of the value of a second channel comes from a different model
-  not sharing the first model's blind spots; that isn't wired up yet. Channel
-  A's deterministic floor still applies regardless of which model runs
-  Channel B.
-- **Channel B's token cost is untracked.** Every CDV step that runs Channel B
-  is a second LLM call (up to ~3000 input characters of step output plus goal
-  and criteria, up to 500 output tokens) on top of the agent's own step. This
-  overhead isn't currently measured or surfaced in the verdict JSON or
-  `cdv_report`.
-- **The adaptive-vs-fixed benchmark above is a synthetic simulation**, not a
-  live-LLM evaluation: it exercises the real `AgentLoopController` /
-  `AdaptivePriors` decision policy, but against a hand-crafted
-  diminishing-returns curve, not real CDV (Channel A + B) scored
-  trajectories. The script itself isn't in the current working tree —
-  recoverable via `git show <rev>:benchmarks/adaptive_vs_fixed.py` (e.g.
-  `92aa875` or earlier) — so treat the table as a lower bound on rigor, not a
-  validated production result.
+- **Channel B is not yet a genuinely separate model.** It calls the same
+  MCP-sampled model the agent uses, differentiated by prompt role, not by
+  weights. A different-model critic (a local open-weights model is the obvious
+  candidate) would close most of the independence gap; Channel A's
+  deterministic floor applies regardless.
+- **Channel B's token cost is untracked.** Every judged step is a second LLM
+  call; the overhead isn't measured or surfaced yet.
+- **Recall ranking is keyword overlap**, not embeddings — the seam is stable
+  for an FTS5/vector upgrade.
+- **Single machine, session-scoped.** Per-project SQLite under `~/.cdv/`; no
+  cloud execution, no multi-repo view.
 
----
+## Use it
 
-## Tools (36)
-
-| Tool | What it does |
-|---|---|
-| `cdv_loop_start` | **Layer 3.** Begin CDV agent loop; returns learned budget + verifier recipe |
-| `cdv_loop_step` | Submit step artifact for CDV; returns continue/stop + channel scores |
-| `cdv_loop_end` | Close loop and learn optimal depth from verified trajectories |
-| `cdv_loop_status` | Inspect an active agent-loop session |
-| `cdv_loop_resume` | Resume an in-progress agent loop after an IDE reload or MCP restart |
-| `cdv_run_status` | Active loop/plan/DAG run snapshots for crash recovery |
-| `cdv_recall` | Keyword recall of similar past episodes |
-| `cdv_run_pipeline` | **Layer 2.** Elicit → decompose → execute → verify in one call |
-| `cdv_intercept` | **Layer 1.** Score + route a prompt; logs to history |
-| `cdv_gauge` | Instant quality bars, no DB write |
-| `cdv_refine` | Score → sample → retry loop via MCP Sampling |
-| `cdv_plan_tasks` | Decompose a goal into ordered subtasks via MCP Sampling |
-| `cdv_verify_output` | Keyword pre-check + deep sample against quality criteria |
-| `cdv_elicitation_start/answer/finish` | Multi-turn clarifying question session |
-| `cdv_plan_register` | Create a confidence-gated plan saved to SQLite |
-| `cdv_plan_next` | Advance to next task; returns `needs_replan` if quality dropped |
-| `cdv_plan_update` | Record task scores; recalculates rolling confidence |
-| `cdv_plan_list` | Dashboard: all plans with gauges and task counts |
-| `cdv_plan_delete` | Remove a completed or abandoned plan |
-| `cdv_context_history` | Browse prompt history with sparklines |
-| `cdv_context_clear` | Wipe prompt history (scoped or all) |
-| `cdv_prompt_stats` | Prompting quality trend and learning curve |
-| `cdv_feedback` | Rate a response (1–5); triggers SGD weight update |
-| `cdv_suggest_config` | Bayesian-optimal loop config for a task type |
-| `cdv_dag_compile` | *(Experimental.)* Compile a goal into a dependency-ordered DAG of virtual sub-agent nodes |
-| `cdv_dag_ready` | Return frontier DAG nodes whose dependencies are verified |
-| `cdv_dag_submit` | Submit a DAG node step artifact for CDV scoring |
-| `cdv_dag_status` | Full DAG graph state: node states, scores, ready frontier |
-| `cdv_dag_merge` | Merge verified DAG node outputs in topological order |
-| `cdv_classify_task` | Label a prompt's task type |
-| `cdv_analyze_prompt` | Generate clarifying questions ranked by Thompson-sampled gain |
-| `cdv_list_tasks` | List tasks from the persistent store |
-| `cdv_show_task` | Detail view for a single task |
-| `cdv_report` | Learned weights, Bayesian priors, question effectiveness stats |
-
-Plans, episodes, and learned weights persist to a per-project `~/.cdv/projects/<id>/store.db` (schema v6).
-
-> Current release: **v1.0.0** — the CDV rebrand (formerly loopllm): package, CLI, `cdv_*` tools, `CDV_*` env vars, `~/.cdv` state. Before that: CDV agent loops + audit trail (v0.7, v0.10), episodic memory (v0.8), DAG virtual sub-agents (v0.9, experimental), CI audit-gate + `install-mcp --rules` (v0.11). See [CHANGELOG.md](CHANGELOG.md).
-
----
-
-## Develop from source
+The preview is installable and functional:
 
 ```bash
-git clone https://github.com/azank1/cdv
-cd cdv
-pip install -e ".[dev]"
-python -m pytest tests/ -q          # ~300 tests, ~3s
+pipx install "cdv[mcp]"
+cdv install-mcp --ide all --rules   # registers the server + drops agent rules
 ```
 
-Committed [`.cursor/mcp.json`](.cursor/mcp.json) and [`.vscode/mcp.json`](.vscode/mcp.json) use `"command": "cdv"` (expects pipx or PATH). For a repo-local venv, point `command` at `.venv/bin/cdv`.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming (`az/<type>/<short>`) and checks.
-Maintainers cutting a release should follow [RELEASING.md](RELEASING.md).
-
-**Key files:**
-- `src/cdv/mcp_server.py` — 36 MCP tools + MCP Sampling helpers
-- `src/cdv/step_scorer.py` — Conservative Dual-Verify scoring
-- `src/cdv/agent_loop.py` — adaptive agent-loop controller
-- `src/cdv/guards.py` — composable agent-loop stop stack
-- `src/cdv/evaluator_factory.py` — build evaluators for CDV Channel A
-- `src/cdv/priors.py` — Beta/Normal priors, Welford, Thompson Sampling
-- `src/cdv/store.py` — SQLite persistence (schema v6)
-- `src/cdv/episodes.py` — episodic memory record/recall
-- `src/cdv/dag_scheduler.py` — DAG virtual sub-agents (experimental)
-- `src/cdv/engine.py` — core refinement loop (`LoopedLLM`)
-
-PRs welcome. Add tests for new tools in `tests/`.
-
----
-
-## Environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `CDV_PROVIDER` | `agent` | `agent`, `ollama`, or `openrouter` |
-| `CDV_MODEL` | `agent` | Model identifier (ignored in agent mode) |
-| `CDV_DB` | `~/.cdv/store.db` | SQLite store path |
-| `CDV_PROJECT` | auto-detected | Override per-project state scoping |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama base URL |
-| `OPENROUTER_API_KEY` | — | OpenRouter API key |
-
----
+- PyPI: [`cdv`](https://pypi.org/project/cdv/) (formerly `loopllm` — old
+  installs forward here automatically)
+- VS Code extension: **CDV — Judge for AI Coding Agents** (Marketplace / Open VSX)
+- Library API: `AgentLoopController`, `AdaptivePriors`, `AdaptiveStopper`
+  (drop-in `should_continue` for LangGraph/CrewAI-style loops)
 
 ## License
 
-MIT
+MIT — the preview is yours to read, cite, and fork.
